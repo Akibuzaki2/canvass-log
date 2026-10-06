@@ -37,7 +37,7 @@ for (const [name, lat, lng] of spots) {
   for (const pt of where.filter((_, i) => i % Math.max(1, Math.floor(where.length / 6)) === 0).slice(0, 6)) {
     const [la, ln] = pt.split(' ')[0].split(',');
     const q = `[out:json][timeout:25];(way(around:4,${la},${ln})[highway];node(around:12,${la},${ln})["addr:housenumber"];way(around:12,${la},${ln})[building];);out tags center;`;
-    try { const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'canvass-log-diag' }, body: 'data=' + encodeURIComponent(q) }); const j = await r.json();
+    try { let j = null; for (const host of ['https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) { try { const r = await fetch(host + '?data=' + encodeURIComponent(q)); j = JSON.parse(await r.text()); break; } catch {} } if (!j) throw new Error('all mirrors');
       console.log('   ', pt, '->', j.elements.map(e => `${e.type}:${JSON.stringify(e.tags).slice(0, 140)}`).join(' || ')); } catch (e) { console.log('    overpass failed', e.message); }
     await new Promise(r => setTimeout(r, 1500));
   }
