@@ -1529,7 +1529,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     }
     const all = fixed ? [fixed, ...order] : order;
     const seen = new Set();
-    const out = all.map(l => {
+    const out = all.map((l, i) => {
       const key = l.street + l.side, cont = seen.has(key); seen.add(key);
       const nums = l.hs.map(h => parseInt(h.num)).filter(n => isFinite(n));
       const odd = nums.filter(n => n % 2).length;
@@ -1537,7 +1537,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       const a = A(l), b = B(l);
       const heading = l.hs.length > 1 && dist(a, b) > 15 ? compass(b[0] - a[0], b[1] - a[1], true) : '';
       return {
-        street: l.street === 'Other houses' ? 'Other houses' : l.street, cont,
+        street: l.street === 'Other houses' ? 'Other houses' : l.street, cont, walkIn: i ? Math.round(W(B(all[i - 1]), A(l))) : 0,
         side: l.street === 'Other houses' ? '' : l.both ? 'both sides' : `${compass(-l.ax[1] * l.side, l.ax[0] * l.side)} side`, parity: l.both ? '' : parity, heading,
         houses: l.hs.map(h => ({ id: h.id, lat: h.lat, lng: h.lng, num: h.num, street: h.street === 'Other houses' ? '' : h.street, placeId: h.placeId || null })),
       };
@@ -1850,7 +1850,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
           <span class="meta"><span class="dot ${p && p.status ? '' : 'planned'}"></span>${[status, h.cat, p && p.name].filter(Boolean).map(esc).join(' · ')}</span>
         </button></li>`;
       }).join('');
-      const how = [s.side && (s.parity ? `${s.side} (${s.parity})` : s.side), s.heading && `walk ${s.heading}`].filter(Boolean).join(', ');
+      const how = [s.walkIn >= 120 && `${Math.round(s.walkIn / 10) * 10} m walk to get here`, s.side && (s.parity ? `${s.side} (${s.parity})` : s.side), s.heading && `walk ${s.heading}`].filter(Boolean).join(', ');
       return rows ? `<li class="street"><span>${esc(s.street)}${s.cont ? ' (continued)' : ''}${how ? `<small>${esc(how)}</small>` : ''}</span><span>${s.houses.length}</span></li>${rows}` : '';
     }).join('') + (all.length && walk.end ? `<li class="street finish"><span>Finish at ${esc(walk.end.label || 'your end point')}<small>${backDist()}</small></span><span>🏁</span></li>`
       : all.length && !(walk.plan && walk.plan.kind === 'business') ? `<li class="street finish"><span>Finish: back at ${esc(startLabel())}<small>${backDist()}</small></span><span>🚗</span></li>` : '');
