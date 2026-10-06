@@ -1349,7 +1349,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         if (F.type !== 2) return;
         const t = tagsOf(tr, F);
         if (/^(motorway|rail|transit|ferry|aerialway|raceway|bus_guideway|busway)$/.test(t.class || '') || t.ramp === 1 || t.ramp === true || t.foot === 'no') return;
-        tileParts(F.geom).forEach((part, j) => elements.push({ type: 'way', id: `w${x}.${y}.${i}.${j}`, tags: { walk: t.class || 'path', brunnel: t.brunnel || '' }, geometry: part.map(pt => toLL(tr, pt)) }));
+        tileParts(F.geom).forEach((part, j) => elements.push({ type: 'way', id: `w${x}.${y}.${i}.${j}`, tags: { walk: t.class || 'path', brunnel: t.brunnel || '', service: t.service || '', access: t.access || '' }, geometry: part.map(pt => toLL(tr, pt)) }));
       });
       const bl = layers.building;
       if (bl) bl.feats.forEach((F, i) => tileParts(F.geom).forEach((ring, j) => {
@@ -1523,6 +1523,21 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     }
     if (opts.limit && doors.length > opts.limit) doors = doors.slice().sort((a, b) => cost(a) - cost(b)).slice(0, opts.limit);
     const sections = loopRoute(doors, streets, home, goal, net);
+    const kx = Math.cos(start.lat * Math.PI / 180) * 111320, ky = 110540;
+    const ll = p => [+(start.lat + p[1] / ky).toFixed(6), +(start.lng + p[0] / kx).toFixed(6)];
+    for (const s of sections) {
+      if (s.pathXY) {
+        // Merge the pieces into as few lines as possible; keep breaks where no mapped path joins them.
+        const lines = [];
+        for (const seg of s.pathXY) {
+          const pts = seg.map(ll), last = lines[lines.length - 1];
+          if (last && last[last.length - 1][0] === pts[0][0] && last[last.length - 1][1] === pts[0][1]) last.push(...pts.slice(1)); else lines.push(pts);
+        }
+        s.path = lines;
+        s.houses.forEach((h, i) => { const c = s.curbXY[i]; if (c) h.curb = ll(c); });
+      }
+      delete s.pathXY; delete s.curbXY;
+    }
     sections.count = doors.length - (sections.skipped || 0);
     const first = sections[0] && sections[0].houses[0];
     sections.start = opts.pickStart && first ? { lat: first.lat, lng: first.lng } : null;
@@ -1538,7 +1553,9 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const inBox = p => p[0] > box[0] && p[0] < box[2] && p[1] > box[1] && p[1] < box[3];
     for (const el of data.elements || []) {
       const t = el.tags || {};
-      const ok = t.walk || (t.highway && !/^(motorway|motorway_link|trunk_link)$/.test(t.highway));
+      const ok = t.walk || (t.highway && !/^(motorway|motorway_link|trunk_link|track|construction|proposed)$/.test(t.highway));
+      // Driveways, parking lots, farm tracks and private ways cut across people's property: never walk them.
+      if (/^(track)$/.test(t.walk || '') || /^(driveway|parking_aisle|drive-through)$/.test(t.service || '') || /^(private|no|customers|delivery)$/.test(t.access || '') || /^(no|private)$/.test(t.foot || '')) continue;
       if (el.type !== 'way' || !ok || !el.geometry) continue;
       const pts = el.geometry.map(g => P(g.lat, g.lon));
       if (!pts.some(inBox)) continue;
@@ -1597,6 +1614,19 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const chain = [a, ...[...new Set(list)].sort((m, n) => dist(A, xy[m]) - dist(A, xy[n])), b];
       for (let z = 1; z < chain.length; z++) if (chain[z] !== chain[z - 1]) link(chain[z - 1], chain[z], dist(xy[chain[z - 1]], xy[chain[z]]));
     }
+    // Safe places to cross a street: intersections, and the closed end of a dead-end street.
+    const jgrid = new Map();
+    for (let i = 0; i < xy.length; i++) {
+      const deg = adj[i].length / 2;
+      if (deg === 2) continue;
+      const c = Math.floor(xy[i][0] / C) + ',' + Math.floor(xy[i][1] / C), l = jgrid.get(c); l ? l.push(i) : jgrid.set(c, [i]);
+    }
+    const junction = (p, maxD) => {
+      let best = null, bd = maxD;
+      for (let gx = Math.floor((p[0] - maxD) / C); gx <= Math.floor((p[0] + maxD) / C); gx++) for (let gy = Math.floor((p[1] - maxD) / C); gy <= Math.floor((p[1] + maxD) / C); gy++)
+        for (const i of jgrid.get(gx + ',' + gy) || []) { const d = dist(p, xy[i]); if (d < bd) { bd = d; best = i; } }
+      return best == null ? null : xy[best];
+    };
     const snaps = new Map();
     const snap = p => {
       if (snaps.has(p)) return snaps.get(p);
@@ -1604,7 +1634,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (hit) {
         const [a, b] = segs[hit.k], A = xy[a], B = xy[b], dx = B[0] - A[0], dy = B[1] - A[1], l2 = dx * dx + dy * dy;
         const t = l2 ? Math.max(0, Math.min(1, ((p[0] - A[0]) * dx + (p[1] - A[1]) * dy) / l2)) : 0, L = Math.sqrt(l2);
-        r = { k: hit.k, a, b, da: hit.d + t * L, db: hit.d + (1 - t) * L };
+        r = { k: hit.k, a, b, da: hit.d + t * L, db: hit.d + (1 - t) * L, pt: [A[0] + t * dx, A[1] + t * dy] };
       }
       snaps.set(p, r); return r;
     };
@@ -1615,15 +1645,16 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const heap = [];
       const push = (n, v) => { heap.push([v, n]); let i = heap.length - 1; while (i) { const q = (i - 1) >> 1; if (heap[q][0] <= heap[i][0]) break; [heap[q], heap[i]] = [heap[i], heap[q]]; i = q; } };
       const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
-      const relax = (n, v) => { if (v < (d.get(n) ?? Infinity)) { d.set(n, v); push(n, v); } };
-      relax(s0.a, s0.da); relax(s0.b, s0.db);
+      const prev = new Map();
+      const relax = (n, v, from) => { if (v < (d.get(n) ?? Infinity)) { d.set(n, v); prev.set(n, from); push(n, v); } };
+      relax(s0.a, s0.da, -1); relax(s0.b, s0.db, -1);
       while (heap.length) {
         const [v, n] = pop();
         if (v > (d.get(n) ?? Infinity) || v > cut) continue;
         const e = adj[n];
-        for (let k = 0; k < e.length; k += 2) relax(e[k], v + e[k + 1]);
+        for (let k = 0; k < e.length; k += 2) relax(e[k], v + e[k + 1], n);
       }
-      return { s0, d };
+      return { s0, d, prev };
     }
     const reach = (run, q) => {
       if (!run) return Infinity;
@@ -1648,6 +1679,19 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         return est(p, q);
       },
       all(p, cut) { const run = from(p, cut); return q => run ? reach(run, q) : est(p, q); },
+      junction,
+      // The streets and paths between two points, as a list of points (never a straight cut between them).
+      path(p, q) {
+        const sp = snap(p), sq = snap(q);
+        if (!sp || !sq) return null;
+        if (sp.k === sq.k) return [sp.pt, sq.pt];
+        const run = from(p, dist(p, q) * 4 + 600);
+        const ea = (run.d.get(sq.a) ?? Infinity) + sq.da, eb = (run.d.get(sq.b) ?? Infinity) + sq.db;
+        if (!isFinite(Math.min(ea, eb))) return null;
+        const nodes = [];
+        for (let n = ea <= eb ? sq.a : sq.b, guard = 0; n != null && n !== -1 && guard < 20000; n = run.prev.get(n), guard++) nodes.push(n);
+        return [sp.pt, ...nodes.reverse().map(i => xy[i]), sq.pt];
+      },
       gap(p, q) { const straight = dist(p, q); const run = from(p, straight * 2.5 + 80); return run ? reach(run, q) : straight; },
     };
   }
@@ -1702,8 +1746,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const lo = Math.min(...small.hs.map(h => h.along)), hi = Math.max(...small.hs.map(h => h.along));
       const host = legs.find(l => l !== small && !l.gone && l.street === small.street && l.side !== small.side && l.hs.length > small.hs.length &&
         lo >= Math.min(...l.hs.map(h => h.along)) - 40 && hi <= Math.max(...l.hs.map(h => h.along)) + 40);
-      if (!host) continue;
-      host.hs = [...host.hs, ...small.hs].sort((a, b) => a.along - b.along); host.both = true; small.gone = true;
+      // Kept as its own stretch: crossing for it happens at a corner, never mid-block between doors.
+      if (!host || true) continue;
     }
     legs = legs.filter(l => !l.gone);
     // The leg holding the start house goes first, starting at that house; the rest of that side waits.
@@ -1724,7 +1768,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const W = net ? (p, q) => net.d(p, q) : dist;
     // Step cost between legs: the walk between them, plus a nudge to finish a street before starting another.
     const SWITCH = 45;
-    const E = (p, n) => W(p ? B(p) : from, n ? A(n) : finish) + (p && n && p.street !== n.street ? SWITCH : 0);
+    const crossAt = (a, b) => { if (!net) return 0; const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], j = net.junction(m, 250); return j ? dist(a, j) + dist(j, b) - dist(a, b) : 120; };
+    const crossCache = new Map();
+    const XC = (p, n) => { if (!p || !n || p.street !== n.street || p.side === n.side || p.street === 'Other houses') return 0; const k = p.street + p.side + B(p) + A(n); if (!crossCache.has(k)) crossCache.set(k, crossAt(B(p), A(n))); return crossCache.get(k); };
+    const E = (p, n) => W(p ? B(p) : from, n ? A(n) : finish) + (p && n && p.street !== n.street ? SWITCH : XC(p, n));
     const total = o => { let t = 0, prev = fixed; for (const l of o) { t += E(prev, l); prev = l; } return t + E(prev, null); };
     // Greedy (sometimes taking the second-best leg on restarts), then 2-opt and or-opt clean-up.
     let seed = 7;
@@ -1799,9 +1846,52 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         side: l.street === 'Other houses' ? '' : l.both ? 'both sides' : `${compass(-l.ax[1] * l.side, l.ax[0] * l.side)} side`, parity: l.both ? '' : parity, heading,
         houses: l.hs.map(h => ({ id: h.id, lat: h.lat, lng: h.lng, num: h.num, street: h.street === 'Other houses' ? '' : h.street, placeId: h.placeId || null })),
       };
-    }).filter(x => x.houses.length);
-    out.skipped = skipped;
-    return out;
+    });
+    // The line you walk: along streets and paths only, crossing to the other side of a street at a
+    // corner or the end of a dead end. Never a straight cut between houses (that goes through yards).
+    if (net) {
+      const curbOf = h => {
+        if (h.curb) return h.curb;
+        const road = streets.get(h.street); let c = null, bd = 80;
+        if (road) for (const [a, b] of road.segs) {
+          const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+          const t = l2 ? Math.max(0, Math.min(1, ((h.xy[0] - a[0]) * dx + (h.xy[1] - a[1]) * dy) / l2)) : 0, q = [a[0] + t * dx, a[1] + t * dy], d = dist(h.xy, q);
+          if (d < bd) { bd = d; c = q; }
+        }
+        // Aim a few metres off the centre line on the house's own side, so a mapped sidewalk there wins.
+        if (c) { const d = dist(h.xy, c); if (d > 6) c = [c[0] + (h.xy[0] - c[0]) * 6 / d, c[1] + (h.xy[1] - c[1]) * 6 / d]; }
+        const sn = net.path(c || h.xy, c || h.xy);
+        return (h.curb = sn ? sn[0] : null);
+      };
+      const lines = [];
+      const go = (p, q, sameStreetSwitch) => {
+        if (!p || !q) return null;
+        if (sameStreetSwitch) {
+          const j = net.junction([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], 250);
+          if (j) { const a = net.path(p, j), b = net.path(j, q); if (a && b) return [...a, ...b.slice(1)]; }
+        }
+        return net.path(p, q);
+      };
+      let at = home, prevLeg = null;
+      all.forEach((l, i) => {
+        const segs = [];
+        let cur = at;
+        const sw = prevLeg && prevLeg.street === l.street && prevLeg.side !== l.side && l.street !== 'Other houses';
+        l.hs.forEach((h, k) => {
+          const c = curbOf(h);
+          const p = cur && c ? go(cur, c, k === 0 && sw) : null;
+          if (p && p.length > 1) segs.push(p);
+          if (c) cur = c;
+        });
+        if (i === all.length - 1) { const p = cur ? go(cur, finish, false) : null; if (p && p.length > 1) segs.push(p); }
+        at = cur; prevLeg = l;
+        lines.push(segs);
+      });
+      out.forEach((o, i) => { o.pathXY = lines[i]; o.curbXY = all[i].hs.map(h => h.curb || null); });
+    }
+    const kept = out.filter(x => x.houses.length);
+    kept.skipped = skipped;
+    return kept;
   }
 
   const RANGES = { '10-20': [10, 20], '20-50': [20, 50], '50-100': [50, 100], '100+': [100, 300] };
@@ -2138,7 +2228,16 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const loop = !(walk.plan && walk.plan.kind === 'business') && !walk.end;
     if (all.length && walk.end) L.marker([walk.end.lat, walk.end.lng], { icon: L.divIcon({ className: '', html: '<div class="car-pin">🏁</div>', iconSize: [30, 30] }), interactive: false }).addTo(walkLayer);
     if (all.length && (loop || walk.end)) L.marker([walk.start.lat, walk.start.lng], { icon: L.divIcon({ className: '', html: '<div class="car-pin">🚗</div>', iconSize: [30, 30] }), interactive: false }).addTo(walkLayer);
-    if (all.length > 1) L.polyline([...all.map(h => [h.lat, h.lng]), ...(walk.end ? [[walk.end.lat, walk.end.lng]] : loop ? [[walk.start.lat, walk.start.lng]] : [])], { color: cssVar('var(--accent)'), weight: 2, opacity: .55, dashArray: '4 6', interactive: false }).addTo(walkLayer);
+    if (walk.plan && walk.plan.kind === 'business') {
+      // A driving order between businesses, not a walking line.
+      if (all.length > 1) L.polyline(all.map(h => [h.lat, h.lng]), { color: cssVar('var(--accent)'), weight: 2, opacity: .45, dashArray: '4 6', interactive: false }).addTo(walkLayer);
+    } else {
+      // Walking line: only along mapped streets and paths. Short thin ticks join each door to its curb.
+      for (const s of walk.sections) {
+        for (const line of s.path || []) if (line.length > 1) L.polyline(line, { color: cssVar('var(--accent)'), weight: 4, opacity: .6, lineJoin: 'round', interactive: false }).addTo(walkLayer);
+        for (const h of s.houses) if (h.curb) L.polyline([h.curb, [h.lat, h.lng]], { color: cssVar('var(--accent)'), weight: 1.5, opacity: .5, dashArray: '2 4', interactive: false }).addTo(walkLayer);
+      }
+    }
     for (const h of all) {
       if (placeFor(h)) continue; // logged doors already have a colored pin
       L.circleMarker([h.lat, h.lng], { radius: 6, weight: 2, color: cssVar('var(--st-planned)'), fillColor: '#ffffff', fillOpacity: 1, bubblingMouseEvents: false })
