@@ -2598,6 +2598,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   // ---------- Event finder ----------
   // Events come from events.json next to the app (refreshed by a weekly web search) plus events you add.
   // Your booking status, booth number and notes are kept per event on this phone.
+  const hasNum = v => typeof v === 'number' && Number.isFinite(v);
   const EV_TYPES = [
     { key: 'home_show', label: 'Home, garden or remodeling show', pts: 25, why: 'Home and garden shows draw homeowners who are planning projects' },
     { key: 'neighborhood', label: 'Neighborhood, HOA or block party', pts: 20, why: 'Neighborhood and HOA events are almost all local homeowners' },
@@ -2627,14 +2628,14 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   const saveEvf = () => writeJSON(EVF_KEY, evf);
   let myLoc = null, evOnMap = false, evFocus = null, evOpen = null, feedNote = '';
   const allEvents = () => [...(feed && Array.isArray(feed.events) ? feed.events : []), ...myEvents].filter(e => e && e.id && e.name)
-    .map(e => { const st = evState[e.id] || {}, ed = st.edits; let x = ed ? Object.assign({}, e, ed) : e; if (!isFinite(x.lat) && st.geo && st.geo.lat != null) x = Object.assign({}, x, { lat: st.geo.lat, lng: st.geo.lng }); return x; });
+    .map(e => { const st = evState[e.id] || {}, ed = st.edits; let x = ed ? Object.assign({}, e, ed) : e; if (!hasNum(x.lat) && st.geo && st.geo.lat != null) x = Object.assign({}, x, { lat: st.geo.lat, lng: st.geo.lng }); return x; });
   // Listings without coordinates are looked up once (one per second, Nominatim's limit) and remembered.
   let geoBusy = false;
   async function geocodeEvents() {
     if (geoBusy || !navigator.onLine) return;
     geoBusy = true;
     try {
-      for (const e of allEvents().filter(x => !isFinite(x.lat) && !(evState[x.id] || {}).geo)) {
+      for (const e of allEvents().filter(x => !hasNum(x.lat) && !(evState[x.id] || {}).geo)) {
         const q = [e.address, e.city && !String(e.address || '').includes(e.city) ? e.city : '', /\b(ID|Idaho)\b/.test(e.address || '') ? '' : 'Idaho'].filter(Boolean).join(', ') || e.venue;
         if (!q) continue;
         try {
@@ -2687,7 +2688,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     return b && b.toDateString() !== a.toDateString() ? `${one} to ${b.toLocaleDateString(undefined, o)}` : one;
   };
   const origin = () => evf.from === 'set' && evf.place ? [evf.place.lat, evf.place.lng] : evf.from === 'me' && myLoc ? myLoc : (c => [c.lat, c.lng])(map.getCenter());
-  const miles = e => isFinite(e.lat) && isFinite(e.lng) ? km(origin(), [e.lat, e.lng]) * 0.621371 : null;
+  const miles = e => hasNum(e.lat) && hasNum(e.lng) ? km(origin(), [e.lat, e.lng]) * 0.621371 : null;
 
   // Rating: points for who comes, what a booth costs per visitor, the homes around it and the rules.
   // Every reason says where it came from.
@@ -2732,7 +2733,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     try {
       for (const e of list) {
         const st = stOf(e.id);
-        if (st.census || !isFinite(e.lat)) continue;
+        if (st.census || !hasNum(e.lat)) continue;
         try {
           const { bgs } = await blockGroups([e.lat, e.lng], 1.6);
           if (!bgs.length) { st.census = { none: 1 }; continue; }
@@ -2934,7 +2935,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       ${e.mine ? '<button class="btn" type="button" id="evEdit">Edit event details</button>' : ''}`;
     $('evRequest').textContent = st.status === 'reserved' ? 'Contact organizer' : 'Request a booth';
     $('evRequest').disabled = !e.email && !apply && !e.phone && !web;
-    $('evOnMapBtn').disabled = !isFinite(e.lat);
+    $('evOnMapBtn').disabled = !hasNum(e.lat);
   }
   function openEvent(id) {
     const e = allEvents().find(x => x.id === id); if (!e) return;
@@ -2986,7 +2987,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     map.setView([e.lat, e.lng], Math.max(map.getZoom(), 15));
   });
   $('evMap').addEventListener('click', () => {
-    const list = evFiltered().filter(x => isFinite(x.e.lat));
+    const list = evFiltered().filter(x => hasNum(x.e.lat));
     if (!list.length) return toast('No events with a location to show.');
     evOnMap = true; evFocus = null; showTab('map'); drawEvents(); legend();
     map.fitBounds(list.map(x => [x.e.lat, x.e.lng]), { padding: [40, 40], maxZoom: 15 });
@@ -2997,7 +2998,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const list = evFiltered();
     if (evFocus && !list.some(x => x.e.id === evFocus)) { const e = allEvents().find(x => x.id === evFocus); if (e) list.push({ e, r: rateEvent(e) }); }
     for (const { e, r } of list) {
-      if (!isFinite(e.lat) || !isFinite(e.lng)) continue;
+      if (!hasNum(e.lat) || !hasNum(e.lng)) continue;
       const st = evState[e.id] || {};
       L.marker([e.lat, e.lng], { icon: L.divIcon({ className: '', html: `<div class="ev-pin ${e.id === evFocus ? 'focus' : ''}" style="--c:${r.band.color}">${st.status === 'reserved' ? '✓' : '★'}</div>`, iconSize: [28, 28] }), zIndexOffset: e.id === evFocus ? 1000 : 500 })
         .bindTooltip(`${esc(e.name)} · ${r.band.label}`, { direction: 'top', offset: [0, -12] })
@@ -3185,7 +3186,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     for (const [fid, k] of Object.entries(EF)) e[k] = $(fid).value.trim();
     e.fee = e.fee === '' ? null : num(e.fee.replace(/[$,]/g, ''));
     e.attendance = e.attendance === '' ? null : num(e.attendance.replace(/[,]/g, ''));
-    if (!old || old.address !== e.address || !isFinite(e.lat)) {
+    if (!old || old.address !== e.address || !hasNum(e.lat)) {
       try {
         const [hit] = await search(e.address);
         if (hit) { e.lat = +hit.lat; e.lng = +hit.lon; e.city = hit.address && (hit.address.city || hit.address.town || hit.address.village) || ''; }
