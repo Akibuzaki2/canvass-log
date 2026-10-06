@@ -213,6 +213,15 @@ main { flex: 1; min-height: 0; position: relative; }
 .walk-rows li.street small { display: block; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 13px; }
 .walk-rows li.street.finish { border-top: 1px solid var(--line); }
 p.park { margin: 0; font-size: 15px; }
+.slot { display: flex; flex-direction: column; gap: 6px; }
+.slot-val { font-size: 16px; overflow-wrap: anywhere; }
+.slot-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.slot-btns .chip { box-shadow: none; }
+.slot-btns .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.saved-row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.saved-row .saved-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.saved-row .sub { font-size: 13px; color: var(--muted); }
+.saved-row .btn { flex: none; height: 40px; padding: 0 12px; }
 .car-pin { width: 30px; height: 30px; border-radius: 50%; background: var(--card); border: 2px solid var(--accent); display: grid; place-items: center; font-size: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 .seg.small { grid-template-columns: 1fr 1fr; background: var(--paper); }
 a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; color: var(--ink); }
@@ -676,8 +685,11 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   }
   $('fAddress').addEventListener('input', () => { $('fAddress').dataset.touched = '1'; });
 
+  let picked = null; // the last house opened, for "Use tapped house" in the route builder
   function fillQuick(p) {
     const lat = p ? p.lat : draft.lat, lng = p ? p.lng : draft.lng;
+    picked = { lat, lng };
+    if (p && p.address) $('searchInput').value = p.address;
     const phone = p && p.phone ? p.phone.replace(/[^\d+]/g, '') : '';
     const isApple = /iPhone|iPad|Macintosh/.test(navigator.userAgent);
     const dir = isApple ? `https://maps.apple.com/?daddr=${lat},${lng}` : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
@@ -982,8 +994,15 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   // along one street (zig-zagging across it), then on to the nearest end of the next street.
   const WALK_KEY = 'canvass-log.walk';
   let walk = null;
+  const ROUTES_KEY = 'canvass-log.routes';
+  let routes = [];
+  try { routes = JSON.parse(localStorage.getItem(ROUTES_KEY)) || []; } catch {}
+  const persistRoutes = () => { try { localStorage.setItem(ROUTES_KEY, JSON.stringify(routes)); } catch { toast('Phone storage is full. Delete an old saved route.'); } };
   try { walk = JSON.parse(localStorage.getItem(WALK_KEY)); if (walk && walk.loading) walk = null; } catch {}
-  function saveWalk() { try { walk ? localStorage.setItem(WALK_KEY, JSON.stringify(walk)) : localStorage.removeItem(WALK_KEY); } catch {} }
+  function saveWalk() {
+    try { walk ? localStorage.setItem(WALK_KEY, JSON.stringify(walk)) : localStorage.removeItem(WALK_KEY); } catch {}
+    if (walk && !walk.loading && routes.some(r => r.id === walk.id)) saveRoute();
+  }
 
   // The main Overpass server is often overloaded, so fall back to public mirrors.
   const OVERPASS_SERVERS = ['https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
@@ -1168,8 +1187,9 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   }
 
   function buildRoute(data, start, r, opts = {}) {
-    const within = (xy, lat, lng) => opts.poly ? inPoly(lng, lat, opts.poly) : dist(xy, sxy) <= r;
     const P = projector(start.lat, start.lng), sxy = [0, 0];
+    const cxy = opts.center ? P(opts.center[0], opts.center[1]) : sxy, cr = opts.within || r;
+    const within = (xy, lat, lng) => opts.poly ? inPoly(lng, lat, opts.poly) : dist(xy, cxy) <= cr;
     const streets = new Map();
     const houses = [];
     for (const el of data.elements || []) {
@@ -1218,15 +1238,39 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       const own = h.street && byNorm.get(normStreet(h.street));
       if (own) { h.street = own.name; continue; }
       let best = null, bd = 80;
-      for (const s of streets.values()) for (const [a, b] of s.segs) { const d = segDist(h.xy, a, b); if (d < bd) { bd = d; best = s; } }
+      const near = new Map();
+      for (const s of streets.values()) for (const [a, b] of s.segs) {
+        const d = segDist(h.xy, a, b);
+        if (d < bd) { bd = d; best = s; }
+        if (d < 60 && !(near.get(s) <= d)) near.set(s, d);
+      }
       if (best && !h.num) h.street = best.name;
-      else if (best && !h.street) h.street = best.name;
+      else if (best && !h.street) { h.street = best.name; h.guess = [...near.keys()].map(x => x.name); }
       if (!h.street) h.street = 'Other houses';
+    }
+    // Map tiles don't say which street a number belongs to. The start house's real address does,
+    // and so do the neighbours: a corner house goes with the street whose numbers it fits.
+    const sa = splitAddress(start.address);
+    const s0 = kept.slice().sort((a, b) => dist(a.xy, sxy) - dist(b.xy, sxy))[0];
+    if (s0 && sa.num && s0.num === sa.num && byNorm.get(normStreet(sa.street))) { s0.street = byNorm.get(normStreet(sa.street)).name; s0.guess = null; }
+    for (let round = 0; round < 2; round++) for (const h of kept) {
+      if (!h.guess || h.guess.length < 2) continue;
+      const n = parseInt(h.num); if (!isFinite(n)) continue;
+      const fit = name => {
+        const ds = kept.filter(o => o !== h && o.street === name && isFinite(parseInt(o.num)) && dist(o.xy, h.xy) < 90)
+          .sort((a, b) => dist(a.xy, h.xy) - dist(b.xy, h.xy)).slice(0, 4).map(o => Math.abs(parseInt(o.num) - n)).sort((a, b) => a - b);
+        return ds.length ? ds[Math.floor(ds.length / 2)] : Infinity;
+      };
+      const cur = fit(h.street);
+      let bestName = h.street, bestFit = cur;
+      for (const name of h.guess) { const f = fit(name); if (f < bestFit) { bestFit = f; bestName = name; } }
+      if (bestName !== h.street && bestFit < 60 && bestFit < cur / 3) h.street = bestName;
     }
     // Which doors this route covers: drop the ones the plan filters out, then keep the closest ones.
     const placeById = id => places.find(x => x.id === id);
     let doors = opts.keep ? kept.filter(h => opts.keep(h.placeId ? placeById(h.placeId) : null)) : kept;
     let home = sxy;
+    const goal = opts.goal ? P(opts.goal.lat, opts.goal.lng) : null;
     if (opts.pickStart && doors.length) {
       // Park where the wanted number of doors sits tightest around you, so the loop stays short.
       const n = Math.min(opts.limit || doors.length, doors.length) - 1;
@@ -1238,8 +1282,10 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         if (spread < best) { best = spread; home = doors[i].xy; }
       }
     }
-    if (opts.limit && doors.length > opts.limit) doors = doors.slice().sort((a, b) => dist(a.xy, home) - dist(b.xy, home)).slice(0, opts.limit);
-    const sections = loopRoute(doors, streets, home);
+    const cost = h => goal ? dist(h.xy, home) + dist(h.xy, goal) : dist(h.xy, home);
+    if (opts.limit && doors.length > opts.limit) doors = doors.slice().sort((a, b) => cost(a) - cost(b)).slice(0, opts.limit);
+    const sections = loopRoute(doors, streets, home, goal);
+    sections.count = doors.length;
     const first = sections[0] && sections[0].houses[0];
     sections.start = opts.pickStart && first ? { lat: first.lat, lng: first.lng } : null;
     return sections;
@@ -1252,7 +1298,8 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   };
   // One leg is one side of one street, in walking order. The legs are chained into a loop that starts
   // and ends at the start house (where you parked): up one side of a street, back down the other.
-  function loopRoute(doors, streets, home) {
+  function loopRoute(doors, streets, home, goal) {
+    const finish = goal || home;
     const groups = new Map();
     for (const h of doors) { const g = groups.get(h.street) || []; g.push(h); groups.set(h.street, g); }
     let legs = [];
@@ -1290,52 +1337,64 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     const startH = doors.slice().sort((a, b) => dist(a.xy, home) - dist(b.xy, home))[0];
     if (startH && dist(startH.xy, home) < 35) {
       const leg = legs.find(l => l.hs.includes(startH)), i = leg.hs.indexOf(startH);
-      const up = leg.hs.slice(i), down = leg.hs.slice(0, i + 1).reverse();
-      const [go, rest] = up.length >= down.length ? [up, leg.hs.slice(0, i)] : [down, leg.hs.slice(i + 1)];
+      // The rest of that side becomes two free legs; the solver decides which way to head first.
       legs = legs.filter(l => l !== leg);
-      fixed = { ...leg, hs: go };
-      if (rest.length) legs.push({ ...leg, hs: rest });
+      fixed = { ...leg, hs: [startH] };
+      if (i + 1 < leg.hs.length) legs.push({ ...leg, hs: leg.hs.slice(i + 1), part: 'up' });
+      if (i > 0) legs.push({ ...leg, hs: leg.hs.slice(0, i), part: 'down' });
     }
     const A = l => l.hs[0].xy, B = l => l.hs[l.hs.length - 1].xy;
     const flip = l => ({ ...l, hs: l.hs.slice().reverse() });
-    // Greedy: always walk to the closest unfinished leg end.
-    const order = [];
-    let cur = fixed ? B(fixed) : home;
-    while (legs.length) {
-      let bi = 0, rev = false, bd = Infinity;
-      legs.forEach((l, i) => {
-        const d0 = dist(cur, A(l)), d1 = dist(cur, B(l));
-        if (d0 < bd) { bd = d0; bi = i; rev = false; }
-        if (d1 < bd) { bd = d1; bi = i; rev = true; }
-      });
-      const l = legs.splice(bi, 1)[0], o = rev ? flip(l) : l;
-      order.push(o); cur = B(o);
-    }
-    // 2-opt: reverse stretches of legs (and flip each one) while the loop back to the car gets shorter.
     const from = fixed ? B(fixed) : home;
-    const endOf = i => i < 0 ? from : B(order[i]);
-    const startOf = i => i >= order.length ? home : A(order[i]);
-    for (let pass = 0, better = true; better && pass < 30; pass++) {
-      better = false;
-      for (let i = 0; i < order.length; i++) for (let k = i; k < order.length; k++) {
-        const before = dist(endOf(i - 1), A(order[i])) + dist(B(order[k]), startOf(k + 1));
-        const after = dist(endOf(i - 1), B(order[k])) + dist(A(order[i]), startOf(k + 1));
-        if (after < before - 0.5) { order.splice(i, k - i + 1, ...order.slice(i, k + 1).reverse().map(flip)); better = true; }
+    const total = o => { let t = 0, c = from; for (const l of o) { t += dist(c, A(l)); c = B(l); } return t + dist(c, finish); };
+    // Greedy (sometimes taking the second-closest leg on restarts), then 2-opt and or-opt clean-up.
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    function solve(shake) {
+      const pool = legs.slice(), order = [];
+      let cur = from;
+      while (pool.length) {
+        const opts2 = [];
+        pool.forEach((l, i) => { opts2.push([dist(cur, A(l)), i, false], [dist(cur, B(l)), i, true]); });
+        opts2.sort((x, y) => x[0] - y[0]);
+        const pick = shake && opts2.length > 2 && rnd() < 0.3 ? opts2[opts2[1][1] === opts2[0][1] ? 2 : 1] : opts2[0];
+        const l = pool.splice(pick[1], 1)[0], o = pick[2] ? flip(l) : l;
+        order.push(o); cur = B(o);
       }
-    }
-    // Or-opt: move single legs to wherever they fit best (often saves the walk back to the car).
-    const total = o => { let t = 0, c = from; for (const l of o) { t += dist(c, A(l)); c = B(l); } return t + dist(c, home); };
-    for (let pass = 0, better = true; better && pass < 10 && order.length < 400; pass++) {
-      better = false;
-      for (let i = 0; i < order.length; i++) {
-        const base = total(order), l = order[i], rest = order.slice(0, i).concat(order.slice(i + 1));
-        let bestT = base - 0.5, bestO = null;
-        for (let j = 0; j <= rest.length; j++) for (const x of [l, flip(l)]) {
-          const o = rest.slice(0, j).concat([x], rest.slice(j)), t = total(o);
-          if (t < bestT) { bestT = t; bestO = o; }
+      const endOf = i => i < 0 ? from : B(order[i]);
+      const startOf = i => i >= order.length ? finish : A(order[i]);
+      for (let round = 0; round < 4; round++) {
+        let moved = false;
+        // 2-opt: reverse stretches of legs (and flip each one) while the walk gets shorter.
+        for (let pass = 0, better = true; better && pass < 30; pass++) {
+          better = false;
+          for (let i = 0; i < order.length; i++) for (let k = i; k < order.length; k++) {
+            const before = dist(endOf(i - 1), A(order[i])) + dist(B(order[k]), startOf(k + 1));
+            const after = dist(endOf(i - 1), B(order[k])) + dist(A(order[i]), startOf(k + 1));
+            if (after < before - 0.5) { order.splice(i, k - i + 1, ...order.slice(i, k + 1).reverse().map(flip)); better = moved = true; }
+          }
         }
-        if (bestO) { order.splice(0, order.length, ...bestO); better = true; }
+        // Or-opt: move runs of one to three legs to wherever they fit best.
+        if (order.length < 250) for (let len = 1; len <= 3; len++) for (let i = 0; i + len <= order.length; i++) {
+          const base = total(order), chunk = order.slice(i, i + len), rest = order.slice(0, i).concat(order.slice(i + len));
+          let bestT = base - 0.5, bestO = null;
+          for (let j = 0; j <= rest.length; j++) for (const x of [chunk, chunk.slice().reverse().map(flip)]) {
+            const o = rest.slice(0, j).concat(x, rest.slice(j)), t = total(o);
+            if (t < bestT) { bestT = t; bestO = o; }
+          }
+          if (bestO) { order.splice(0, order.length, ...bestO); moved = true; }
+        }
+        if (!moved) break;
       }
+      return order;
+    }
+    let order = solve(false);
+    for (let k = 0, tries = legs.length < 60 ? 12 : legs.length < 150 ? 4 : 0; k < tries; k++) {
+      const o = solve(true); if (total(o) < total(order) - 0.5) order = o;
+    }
+    // Glue the first leg onto the start house when it simply carries on along the same side.
+    if (fixed && order.length && order[0].street === fixed.street && order[0].side === fixed.side && dist(A(order[0]), B(fixed)) < 110) {
+      fixed = { ...fixed, hs: [...fixed.hs, ...order[0].hs] }; order.shift();
     }
     const all = fixed ? [fixed, ...order] : order;
     const seen = new Set();
@@ -1354,8 +1413,10 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     }).filter(x => x.houses.length);
   }
 
-  async function startWalk(lat, lng, address, area) {
-    walk = { start: { lat, lng, address: address || '', area: area || '', suffix: '' }, radius: walk ? walk.radius : 250, sections: [], loading: true };
+  const RANGES = { '10-20': [10, 20], '20-50': [20, 50], '50-100': [50, 100], '100+': [100, 300] };
+  async function startWalk(lat, lng, address, area, o = {}) {
+    walk = { id: 'r' + Date.now(), start: { lat, lng, address: address || '', area: area || '', suffix: '' }, end: o.end || null, range: o.range || null, radius: o.range ? 0 : walk && [150, 250, 400, 600].includes(walk.radius) ? walk.radius : 250, sections: [], doneIds: [], loading: true };
+    if (o.range || o.end) return buildRanged();
     listMode('walk'); renderWalk(); closeSheet();
     try {
       if (!address || !area) {
@@ -1381,6 +1442,57 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     const pts = walkHouses().map(h => [h.lat, h.lng]);
     if (pts.length && !$('mapView').hidden) map.fitBounds(pts, { maxZoom: 18, padding: [40, 40] });
   }
+  // A route with a house count (and maybe an end point): widen the search until enough doors turn up.
+  async function buildRanged() {
+    const [min, max] = RANGES[walk.range] || RANGES['20-50'];
+    const s0 = walk.start, e0 = walk.end;
+    listMode('walk'); renderWalk(); closeSheet();
+    const keep = p => !p || !(p.status === 'rejected' || p.status === 'lead');
+    try {
+      if (!s0.address) { try { const r = await reverse(s0.lat, s0.lng); s0.address = r.address; s0.area ||= r.area; } catch {} }
+      s0.suffix = (s0.address || '').split(',').slice(1).join(',').trim();
+      const span = e0 ? dist(projector(s0.lat, s0.lng)(e0.lat, e0.lng), [0, 0]) : 0;
+      const mid = e0 ? [(s0.lat + e0.lat) / 2, (s0.lng + e0.lng) / 2] : [s0.lat, s0.lng];
+      let sections = [];
+      for (const extra of [200, 350, 550, 800, 1200]) {
+        const r = Math.round(span / 2 + extra);
+        walk.radius = r; renderWalk();
+        const data = await fetchHouses(mid[0], mid[1], r);
+        sections = buildRoute(data, s0, 1e9, { limit: max, keep, goal: e0, poly: null, within: r, center: mid });
+        if (sections.count >= min) break;
+      }
+      walk.sections = [...sections];
+      walk.loading = false; walk.error = '';
+      const n = walkHouses().length;
+      toast(n ? `${n} houses${n < min ? ` (only ${n} found nearby)` : ''}` : 'No houses found nearby');
+    } catch (e) {
+      walk.loading = false;
+      walk.error = `Could not load houses (${(e && e.message) || 'unknown error'}). Tap Try again.`;
+    }
+    saveWalk(); renderWalk(); drawWalk();
+    const pts = walkHouses().map(h => [h.lat, h.lng]);
+    if (pts.length && !$('mapView').hidden) map.fitBounds(pts, { maxZoom: 18, padding: [40, 40] });
+  }
+  const isSaved = () => !!(walk && walk.id && routes.some(r => r.id === walk.id));
+  function saveRoute() {
+    if (!walk) return;
+    walk.id ||= 'r' + Date.now();
+    if (!walk.name) {
+      const st = (walk.start.address || '').split(',')[0] || 'Route';
+      walk.name = walk.plan ? walk.plan.title : walk.end ? `${st} to ${(walk.end.label || '').split(',')[0] || 'end'}` : `Loop from ${st}`;
+    }
+    const copy = JSON.parse(JSON.stringify(walk)); delete copy.loading; delete copy.error;
+    copy.saved = Date.now();
+    routes = [copy, ...routes.filter(r => r.id !== walk.id)];
+    persistRoutes();
+  }
+  function openRoute(id) {
+    const r = routes.find(x => x.id === id); if (!r) return;
+    walk = JSON.parse(JSON.stringify(r));
+    saveWalk(); listMode('walk'); renderWalk(); drawWalk();
+    const n = nextHouse(walk.stopAt || null);
+    toast(n ? `Resuming at ${houseLabel(n)}` : 'Every house on this route is done');
+  }
   function endWalk() { walk = null; saveWalk(); renderWalk(); drawWalk(); updateSaveNext(); }
 
   const walkHouses = () => (walk && walk.sections ? walk.sections.flatMap(s => s.houses) : []);
@@ -1389,6 +1501,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     return null;
   }
   const doneToday = p => !!p && (p.history || []).some(x => isToday(x.t));
+  const doneOnRoute = h => doneToday(placeFor(h)) || !!(walk && walk.doneIds && walk.doneIds.includes(h.id));
   function houseLabel(h) {
     if (h.biz) return h.biz;
     const p = placeFor(h);
@@ -1399,7 +1512,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   function nextHouse(afterId) {
     const all = walkHouses();
     const i = afterId ? all.findIndex(h => h.id === afterId) : -1;
-    return all.slice(i + 1).find(h => !doneToday(placeFor(h))) || all.slice(0, i + 1).find(h => !doneToday(placeFor(h))) || null;
+    return all.slice(i + 1).find(h => !doneOnRoute(h)) || all.slice(0, i + 1).find(h => !doneOnRoute(h)) || null;
   }
   function lastVisit(p) {
     const t = p && (p.history || []).at(-1)?.t;
@@ -1424,7 +1537,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   }
   function goNext(afterId) {
     const h = nextHouse(afterId);
-    if (!h) { toast('Every house on this route is done for today'); return; }
+    if (!h) { toast('Every house on this route is done'); return; }
     if (!$('mapView').hidden) map.setView([h.lat, h.lng], Math.max(map.getZoom(), 18));
     openHouse(h.id);
   }
@@ -1448,7 +1561,13 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   function afterSave(p, walkId) {
     if (!walk || !walkId) return;
     const h = walkHouses().find(x => x.id === walkId);
-    if (h) { h.placeId = p.id; saveWalk(); }
+    if (h) {
+      h.placeId = p.id;
+      walk.doneIds = walk.doneIds || [];
+      if (p.status && !walk.doneIds.includes(h.id)) walk.doneIds.push(h.id);
+      walk.stopAt = h.id; walk.worked = Date.now();
+      saveWalk();
+    }
   }
 
   // List: segmented Walk route / Visit log
@@ -1471,8 +1590,67 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   const startLabel = () => walk.start.address.split(',')[0] || 'your start';
   function backDist() {
     const all = walkHouses(); if (!all.length) return '';
-    const last = all[all.length - 1], m = dist(projector(walk.start.lat, walk.start.lng)(last.lat, last.lng), [0, 0]);
+    const last = all[all.length - 1], to = walk.end || walk.start, m = dist(projector(to.lat, to.lng)(last.lat, last.lng), [0, 0]);
+    if (walk.end) return m < 40 ? 'The last door is right at your end point' : `About ${Math.round(m / 10) * 10} m from the last door`;
     return m < 40 ? 'The last door is right by your car' : `About ${Math.round(m / 10) * 10} m from the last door back to your car`;
+  }
+  // Route builder: start point, optional end point, how many houses.
+  let rb = { start: null, end: null, range: '20-50' };
+  try { Object.assign(rb, JSON.parse(localStorage.getItem('canvass-log.builder')) || {}); } catch {}
+  const saveRb = () => { try { localStorage.setItem('canvass-log.builder', JSON.stringify(rb)); } catch {} };
+  function builderHtml() {
+    const slot = (k, title, none) => `<div class="slot">
+        <span class="label">${title}</span>
+        <b class="slot-val">${rb[k] ? esc(rb[k].label) : none}</b>
+        <div class="slot-btns">
+          <button class="chip" type="button" data-set="${k}" data-from="tap">Tapped house</button>
+          <button class="chip" type="button" data-set="${k}" data-from="me">My location</button>
+          <button class="chip" type="button" data-set="${k}" data-from="map">Map middle</button>
+          ${rb[k] ? `<button class="chip" type="button" data-set="${k}" data-from="clear">Clear</button>` : ''}
+        </div></div>`;
+    return `<div class="report">
+      <div class="report-head"><h2>Build a route</h2></div>
+      <p class="fine">Tap a house on the map first to use it here. With no end point, the walk loops back to the start.</p>
+      ${slot('start', 'Start', 'Not set')}
+      ${slot('end', 'End', 'Back at the start')}
+      <div class="slot"><span class="label">Houses</span><div class="slot-btns">${Object.keys(RANGES).map(k => `<button class="chip" type="button" data-range="${k}" aria-pressed="${rb.range === k}">${k.replace('-', ' to ')}</button>`).join('')}</div></div>
+      <div class="report-actions"><button class="btn primary" type="button" id="rbGo" ${rb.start ? '' : 'disabled'}>Build route</button></div>
+    </div>`;
+  }
+  function bindBuilder() {
+    $('walkPanel').querySelectorAll('[data-set]').forEach(b => b.onclick = () => {
+      const k = b.dataset.set, from = b.dataset.from;
+      const set = v => { rb[k] = v; saveRb(); renderWalk(); };
+      if (from === 'clear') return set(null);
+      if (from === 'map') { const c = map.getCenter(); set({ lat: c.lat, lng: c.lng, label: 'Middle of the map' }); reverse(c.lat, c.lng).then(g => { if (rb[k] && rb[k].lat === c.lat) { rb[k].label = g.address.split(',')[0] || rb[k].label; saveRb(); if (!walk) renderWalk(); } }).catch(() => {}); return; }
+      if (from === 'tap') {
+        if (!picked) return toast('Tap a house on the map first');
+        return set({ lat: picked.lat, lng: picked.lng, label: ($('searchInput').value || 'Tapped house').split(',')[0] });
+      }
+      if (!navigator.geolocation) return toast('Location is not available on this device.');
+      toast('Finding you…');
+      navigator.geolocation.getCurrentPosition(pos => { $('toast').hidden = true; set({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'My location' }); },
+        () => toast('Allow location access for this site.'), { enableHighAccuracy: true, timeout: 12000 });
+    });
+    $('walkPanel').querySelectorAll('[data-range]').forEach(b => b.onclick = () => { rb.range = b.dataset.range; saveRb(); renderWalk(); });
+    $('rbGo').onclick = () => startWalk(rb.start.lat, rb.start.lng, rb.start.label === 'My location' || rb.start.label === 'Middle of the map' ? '' : rb.start.label, '', { range: rb.range, end: rb.end ? { ...rb.end } : null });
+  }
+  function savedHtml() {
+    if (!routes.length) return '';
+    return `<div class="report"><div class="report-head"><h2>Saved routes</h2></div>
+      <ul class="rows saved">${routes.map(r => {
+        const hs = r.sections.flatMap(x => x.houses), d = (r.doneIds || []).length;
+        return `<li class="saved-row"><div class="saved-text"><b>${esc(r.name || 'Route')}</b><span class="sub">${d} of ${hs.length} done${r.worked ? ` · last worked ${fmtDate(r.worked)}` : ''}</span></div>
+          <button class="btn primary" type="button" data-open="${esc(r.id)}">${d ? 'Resume' : 'Open'}</button>
+          <button class="btn" type="button" data-del="${esc(r.id)}" aria-label="Delete">✕</button></li>`;
+      }).join('')}</ul></div>`;
+  }
+  function bindSaved() {
+    $('walkPanel').querySelectorAll('[data-open]').forEach(b => b.onclick = () => openRoute(b.dataset.open));
+    $('walkPanel').querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+      if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Delete?'; return; }
+      routes = routes.filter(r => r.id !== b.dataset.del); persistRoutes(); renderWalk();
+    });
   }
   function renderWalk() {
     const el = $('walkPanel');
@@ -1483,8 +1661,10 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         <div class="report-actions">
           <button class="btn primary" type="button" id="walkFromMe">Start from my location</button>
           <button class="btn" type="button" id="walkPick">Pick a house on the map</button>
-          <button class="btn" type="button" id="walkPlan">Plan the best route</button>
-        </div></div>`;
+          <button class="btn" type="button" id="walkPlan">Find the best area near me</button>
+        </div></div>
+      ${builderHtml()}
+      ${savedHtml()}`;
       $('walkFromMe').onclick = () => {
         if (!navigator.geolocation) return toast('Location is not available on this device.');
         toast('Finding you…');
@@ -1492,35 +1672,40 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
           () => toast('Allow location access, or pick a house on the map instead.'), { enableHighAccuracy: true, timeout: 12000 });
       };
       $('walkPlan').onclick = () => listMode('plan');
+      bindBuilder(); bindSaved();
       $('walkPick').onclick = () => { showTab('map'); toast('Tap the house you are starting at, then Start walk here'); };
       renderWalkbar(); return;
     }
     if (walk.loading) { el.innerHTML = `<div class="report"><div class="report-head"><h2>Finding houses…</h2></div><p>Looking up every house within ${walk.radius} m of ${esc(walk.start.address.split(',')[0] || 'your start')}.</p></div>`; renderWalkbar(); return; }
-    const all = walkHouses(), done = all.filter(h => doneToday(placeFor(h))).length, nxt = nextHouse(null);
+    const all = walkHouses(), done = all.filter(doneOnRoute).length, nxt = nextHouse(walk.stopAt || null);
     const hideDone = !!walk.hideDone;
     const head = `<div class="report">
       <div class="report-head"><h2>${walk.plan ? esc((walk.plan.kind === 'business' ? 'Business route: ' : 'Planned: ') + walk.plan.title) : `From ${esc(walk.start.address.split(',')[0] || 'your location')}`}</h2>
-        <span class="rate">${done} of ${all.length} done today</span></div>
-      ${all.length && !(walk.plan && walk.plan.kind === 'business') ? `<p class="park">🚗 Park at <b>${esc(startLabel())}</b>. The walk is a loop that ends back there.</p>` : ''}
+        <span class="rate">${done} of ${all.length} done</span></div>
+      ${all.length && walk.end ? `<p class="park">Start at <b>${esc(startLabel())}</b> and finish at <b>${esc(walk.end.label || 'your end point')}</b> 🏁</p>`
+        : all.length && !(walk.plan && walk.plan.kind === 'business') ? `<p class="park">🚗 Park at <b>${esc(startLabel())}</b>. The walk is a loop that ends back there.</p>` : ''}
+      ${walk.stopAt && done && nxt ? `<p class="park">Picking up where you stopped: <b>${esc(houseLabel(nxt))}</b></p>` : ''}
       ${walk.error ? `<p class="warn">${esc(walk.error)}</p><div class="report-actions"><button class="btn primary" type="button" id="walkRetry">Try again</button></div>` : ''}
       ${!walk.error && !all.length ? `<p class="warn">OpenStreetMap has no houses mapped within ${walk.radius} m of here. Try a bigger distance, or tap houses on the map to add them.</p>` : ''}
       <div class="bar" aria-hidden="true"><span style="--c:var(--st-lead);flex:${done}"></span><span style="--c:var(--line);flex:${all.length - done}"></span></div>
       <div class="list-tools"><div class="row">
-        <label class="lt" ${walk.plan ? 'hidden' : ''}><span class="label">Distance</span>
+        <label class="lt" ${walk.plan || walk.range ? 'hidden' : ''}><span class="label">Distance</span>
           <select id="walkRadius">${[150, 250, 400, 600].map(r => `<option value="${r}" ${r === walk.radius ? 'selected' : ''}>Within ${r} m</option>`).join('')}</select></label>
-        <label class="lt check"><input type="checkbox" id="walkHide" ${hideDone ? 'checked' : ''}><span>Hide doors done today</span></label>
+        <label class="lt check"><input type="checkbox" id="walkHide" ${hideDone ? 'checked' : ''}><span>Hide doors already done</span></label>
       </div></div>
       <div class="report-actions">
         <button class="btn primary" type="button" id="walkNext" ${nxt ? '' : 'disabled'}>${nxt ? `Next: ${esc(houseLabel(nxt))}` : 'All done today'}</button>
         ${walk.plan && walk.plan.kind === 'business' && nxt ? `<a class="btn" id="walkDirs" target="_blank" rel="noopener" href="${dirLink(nxt)}">Driving directions</a>` : ''}
         <button class="btn" type="button" id="walkMap">Show on map</button>
+        <button class="btn" type="button" id="walkSave">${isSaved() ? 'Saved ✓' : 'Save route'}</button>
+        <button class="btn" type="button" id="walkStop">Stop for today</button>
         <button class="btn" type="button" id="walkEnd">End walk</button>
       </div></div>`;
     let n = 0;
     const body = walk.sections.map(s => {
       const rows = s.houses.map(h => {
         n++;
-        const p = placeFor(h), st = statusOf(p ? p.status : 'planned'), today = doneToday(p);
+        const p = placeFor(h), st = statusOf(p ? p.status : 'planned'), today = doneOnRoute(h);
         if (hideDone && today) return '';
         const status = p && p.status ? st.label : 'Not visited';
         return `<li><button type="button" class="wrow${nxt && nxt.id === h.id ? ' next' : ''}${today ? ' done' : ''}" data-h="${esc(h.id)}" style="--c:${p && p.status ? st.color : 'var(--st-planned)'}">
@@ -1531,12 +1716,19 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       }).join('');
       const how = [s.side && (s.parity ? `${s.side} (${s.parity})` : s.side), s.heading && `walk ${s.heading}`].filter(Boolean).join(', ');
       return rows ? `<li class="street"><span>${esc(s.street)}${s.cont ? ' (continued)' : ''}${how ? `<small>${esc(how)}</small>` : ''}</span><span>${s.houses.length}</span></li>${rows}` : '';
-    }).join('') + (all.length && !(walk.plan && walk.plan.kind === 'business') ? `<li class="street finish"><span>Finish: back at ${esc(startLabel())}<small>${backDist()}</small></span><span>🚗</span></li>` : '');
+    }).join('') + (all.length && walk.end ? `<li class="street finish"><span>Finish at ${esc(walk.end.label || 'your end point')}<small>${backDist()}</small></span><span>🏁</span></li>`
+      : all.length && !(walk.plan && walk.plan.kind === 'business') ? `<li class="street finish"><span>Finish: back at ${esc(startLabel())}<small>${backDist()}</small></span><span>🚗</span></li>` : '');
     el.innerHTML = head + `<ul class="rows walk-rows">${body}</ul>`;
-    $('walkRadius').onchange = e => { walk.radius = +e.target.value; startWalk(walk.start.lat, walk.start.lng, walk.start.address, walk.start.area); };
-    if ($('walkRetry')) $('walkRetry').onclick = () => startWalk(walk.start.lat, walk.start.lng, walk.start.address, walk.start.area);
+    if ($('walkRadius')) $('walkRadius').onchange = e => { walk.radius = +e.target.value; startWalk(walk.start.lat, walk.start.lng, walk.start.address, walk.start.area); };
+    if ($('walkRetry')) $('walkRetry').onclick = () => startWalk(walk.start.lat, walk.start.lng, walk.start.address, walk.start.area, { range: walk.range, end: walk.end });
     $('walkHide').onchange = e => { walk.hideDone = e.target.checked; saveWalk(); renderWalk(); };
-    $('walkNext').onclick = () => goNext(null);
+    $('walkNext').onclick = () => goNext(walk.stopAt || null);
+    $('walkSave').onclick = () => { saveRoute(); toast(`Saved as "${walk.name}"`); renderWalk(); };
+    $('walkStop').onclick = () => {
+      saveRoute(); const n = nextHouse(walk.stopAt || null);
+      toast(n ? `Saved. Next time you'll pick up at ${houseLabel(n)}` : 'Saved. This route is finished');
+      walk = null; saveWalk(); renderWalk(); drawWalk(); updateSaveNext();
+    };
     $('walkMap').onclick = () => { showTab('map'); const pts = all.map(h => [h.lat, h.lng]); if (pts.length) map.fitBounds(pts, { maxZoom: 18, padding: [30, 30] }); };
     $('walkEnd').onclick = () => { if ($('walkEnd').dataset.sure) endWalk(); else { $('walkEnd').dataset.sure = '1'; $('walkEnd').textContent = 'Tap to end'; } };
     renderWalkbar();
@@ -1548,10 +1740,11 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   function drawWalk() {
     walkLayer.clearLayers();
     if (!walk || walk.loading) { renderWalkbar(); return; }
-    const all = walkHouses(), nxt = nextHouse(null);
-    const loop = !(walk.plan && walk.plan.kind === 'business');
-    if (all.length && loop) L.marker([walk.start.lat, walk.start.lng], { icon: L.divIcon({ className: '', html: '<div class="car-pin">🚗</div>', iconSize: [30, 30] }), interactive: false }).addTo(walkLayer);
-    if (all.length > 1) L.polyline([...all.map(h => [h.lat, h.lng]), ...(loop ? [[walk.start.lat, walk.start.lng]] : [])], { color: cssVar('var(--accent)'), weight: 2, opacity: .55, dashArray: '4 6', interactive: false }).addTo(walkLayer);
+    const all = walkHouses(), nxt = nextHouse(walk.stopAt || null);
+    const loop = !(walk.plan && walk.plan.kind === 'business') && !walk.end;
+    if (all.length && walk.end) L.marker([walk.end.lat, walk.end.lng], { icon: L.divIcon({ className: '', html: '<div class="car-pin">🏁</div>', iconSize: [30, 30] }), interactive: false }).addTo(walkLayer);
+    if (all.length && (loop || walk.end)) L.marker([walk.start.lat, walk.start.lng], { icon: L.divIcon({ className: '', html: '<div class="car-pin">🚗</div>', iconSize: [30, 30] }), interactive: false }).addTo(walkLayer);
+    if (all.length > 1) L.polyline([...all.map(h => [h.lat, h.lng]), ...(walk.end ? [[walk.end.lat, walk.end.lng]] : loop ? [[walk.start.lat, walk.start.lng]] : [])], { color: cssVar('var(--accent)'), weight: 2, opacity: .55, dashArray: '4 6', interactive: false }).addTo(walkLayer);
     for (const h of all) {
       if (placeFor(h)) continue; // logged doors already have a colored pin
       L.circleMarker([h.lat, h.lng], { radius: 6, weight: 2, color: cssVar('var(--st-planned)'), fillColor: '#ffffff', fillOpacity: 1, bubblingMouseEvents: false })
@@ -1565,11 +1758,11 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     if (!walk) { bar.hidden = true; return; }
     $('hint').hidden = true; bar.hidden = false;
     if (walk.loading) { bar.innerHTML = `<span class="wb-text">Finding houses…</span>`; return; }
-    const all = walkHouses(), done = all.filter(h => doneToday(placeFor(h))).length, nxt = nextHouse(null);
+    const all = walkHouses(), done = all.filter(doneOnRoute).length, nxt = nextHouse(walk.stopAt || null);
     bar.innerHTML = `<span class="wb-text"><b>${done}/${all.length}</b> done${nxt ? ` · Next: ${esc(houseLabel(nxt))}` : all.length ? ` · Head back to your car at ${esc(startLabel())}` : ''}</span>
       <button type="button" class="btn primary" id="wbNext" ${nxt ? '' : 'disabled'}>Next</button>
       <button type="button" class="btn" id="wbList">List</button>`;
-    $('wbNext').onclick = () => goNext(null);
+    $('wbNext').onclick = () => goNext(walk.stopAt || null);
     $('wbList').onclick = () => { listMode('walk'); showTab('list'); };
   }
 
