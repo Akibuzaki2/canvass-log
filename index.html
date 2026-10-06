@@ -1564,7 +1564,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const raised = /^(bridge|tunnel)$/.test(t.brunnel || '') || (t.bridge && t.bridge !== 'no') || (t.tunnel && t.tunnel !== 'no');
       // Alleys and service lanes run behind houses and through lots: allowed only as a last resort.
       const lane = t.walk === 'service' || t.highway === 'service' || t.service === 'alley';
-      const w = lane ? 4 : 1;
+      const w = lane ? 10 : 1;
       let prev = null;
       for (const p of pts) { const i = node(p); if (prev != null && prev !== i) { link(prev, i, dist(xy[prev], xy[i]) * w); if (!lane) mainLink(prev, i); segs.push([prev, i, raised, w]); } prev = i; }
     }
