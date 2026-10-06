@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path';
 const APP = path.resolve(process.argv[2]);
 const srv = http.createServer((q, r) => { const f = path.join(APP, q.url.split('?')[0] === '/' ? 'index.html' : q.url.split('?')[0]); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'Content-Type': f.endsWith('.html') ? 'text/html' : f.endsWith('.js') ? 'text/javascript' : 'application/octet-stream' }); r.end(d); } }); }).listen(8080);
-const PLACES = { cape_coral_canals: [26.6286, -81.9762], ft_lauderdale_isles: [26.1195, -80.1206], boulder: [40.0127, -105.2795], chandler_az: [33.2981, -111.8665], plano_tx: [33.0365, -96.7522] };
+const PLACES = { cape_coral_canals: [26.6286, -81.9762], ft_lauderdale_isles: [26.1195, -80.1206], boulder: [40.0127, -105.2795] };
 const browser = await chromium.launch();
 for (const [name, [lat, lng]] of Object.entries(PLACES)) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
@@ -24,7 +24,7 @@ for (const [name, [lat, lng]] of Object.entries(PLACES)) {
   const heads = await page.$$eval('#walkPanel li.street', a => a.map(x => x.textContent.replace(/\s+/g, ' ').trim()));
   console.log('sections:', heads.length, '\n  ' + heads.slice(0, 12).join('\n  '), '\n  ...', heads.at(-1));
   const rows = await page.$$eval('#walkPanel .wrow .addr', a => a.map(x => x.textContent));
-  const jumps = await page.evaluate(() => { const w = JSON.parse(localStorage.getItem('canvass-log.walk')); const hs = w.sections.flatMap(s => s.houses); const out = []; const R = 6371000, d = (a, b) => R * Math.hypot((b.lat - a.lat) * Math.PI / 180, (b.lng - a.lng) * Math.PI / 180 * Math.cos(a.lat * Math.PI / 180)); for (let i = 1; i < hs.length; i++) { const m = d(hs[i - 1], hs[i]); if (m > 90) out.push(`${i}:${Math.round(m)}m ${hs[i-1].num} ${hs[i-1].street} -> ${hs[i].num} ${hs[i].street}`); } return { jumps: out, skipped: w.skipped }; });
+  const jumps = await page.evaluate(() => { const w = JSON.parse(localStorage.getItem('canvass-log.walk')); const hs = w.sections.flatMap(s => s.houses); const out = []; let si = 0; for (const sec of w.sections) { si++; if (sec.walkIn >= 90) out.push(`section ${si} ${sec.street}: walk ${sec.walkIn} m vs straight ${(() => { const prevSec = w.sections[si - 2]; if (!prevSec) return '-'; const a = prevSec.houses.at(-1), b = sec.houses[0]; const R2 = 6371000; return Math.round(R2 * Math.hypot((b.lat - a.lat) * Math.PI / 180, (b.lng - a.lng) * Math.PI / 180 * Math.cos(a.lat * Math.PI / 180))); })()} m`); } const R = 6371000, d = (a, b) => R * Math.hypot((b.lat - a.lat) * Math.PI / 180, (b.lng - a.lng) * Math.PI / 180 * Math.cos(a.lat * Math.PI / 180)); for (let i = 1; i < hs.length; i++) { const m = d(hs[i - 1], hs[i]); if (false) out.push(`${i}:${Math.round(m)}m ${hs[i-1].num} ${hs[i-1].street} -> ${hs[i].num} ${hs[i].street}`); } return { jumps: out, skipped: w.skipped }; });
   console.log('straight-line jumps over 90 m:', JSON.stringify(jumps));
   console.log('houses:', rows.length, 'first 15:', rows.slice(0, 15).join(', '));
   const warn = await page.$$eval('#walkPanel .warn', a => a.map(x => x.textContent)); if (warn.length) console.log('WARN', warn);
