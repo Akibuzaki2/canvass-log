@@ -410,7 +410,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   </section>
   <section class="view" id="listView" aria-label="List" hidden>
     <div class="seg" role="tablist" aria-label="List mode">
-      <button type="button" role="tab" id="segPlan" aria-selected="false">Plan</button>
+      <button type="button" role="tab" id="segPlan" aria-selected="false">Find routes</button>
       <button type="button" role="tab" id="segWalk" aria-selected="false">Walk route</button>
       <button type="button" role="tab" id="segLog" aria-selected="true">Visit log</button>
     </div>
@@ -2176,8 +2176,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     { key: 'beauty', label: 'Beauty & fitness', q: ['nwr["shop"~"^(hairdresser|beauty|massage|tattoo|cosmetics)$"]["name"]', 'nwr["leisure"="fitness_centre"]["name"]'] },
   ];
   const PLAN_KEY = 'canvass-log.plan';
-  let plan = { mode: 'homes', size: 40, minIncome: 0, minOwner: 0, km: 5, followUps: true, bizSize: 15, bizKm: 15, cats: ['retail', 'food', 'office', 'health', 'auto', 'trades', 'beauty'], skipChains: true, results: null, center: null };
+  let plan = { mode: 'homes', size: 40, minIncome: 0, minOwner: 0, km: 5, followUps: true, bizSize: 15, bizKm: 15, cats: ['retail', 'food', 'office', 'health', 'auto', 'trades', 'beauty'], skipChains: true, results: null, center: null, from: 'me', home: null, mi: 5, bizMi: 10, minValue: 0, minSF: 0, skipRecent: true };
   try { Object.assign(plan, JSON.parse(localStorage.getItem(PLAN_KEY)) || {}); } catch {}
+  const MI = 1.609344;
+  plan.km = plan.mi * MI; plan.bizKm = plan.bizMi * MI;
   function savePlan() { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); } catch {} }
   let planBusy = '';
 
@@ -2301,7 +2303,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const density = b.aland ? homes / (b.aland / 1e6) : 0;
       if (plan.minIncome && (c.income == null || c.income < plan.minIncome)) continue;
       if (plan.minOwner && (ownRate == null || ownRate < plan.minOwner)) continue;
+      if (plan.minValue && (c.value == null || c.value < plan.minValue)) continue;
+      if (plan.minSF && sf < plan.minSF) continue;
       const h = historyStats(p => inPoly(p.lng, p.lat, b.rings));
+      if (plan.skipRecent && h.recent >= 5) continue;
       const fresh = Math.max(0, homes - h.visited);
       const targets = fresh + (plan.followUps ? h.pending : 0);
       if (homes < Math.min(N, 15) || targets < N * 0.6) continue; // too few houses, or already worked
@@ -2489,25 +2494,33 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       ${homes ? `
         <div class="row">
           <label class="lt"><span class="label">Houses in route</span>${opt('pSize', [20, 30, 40, 60, 80, 100], plan.size, v => `${v} houses`)}</label>
-          <label class="lt"><span class="label">Search within</span>${opt('pKm', [2, 3, 5, 8, 12], plan.km, v => `${v} km`)}</label>
+          <label class="lt"><span class="label">Search within</span>${opt('pMi', [2, 5, 10, 15, 25], plan.mi, v => `${v} miles`)}</label>
         </div>
         <div class="row">
           <label class="lt"><span class="label">Household income</span>${opt('pInc', [0, 50000, 75000, 100000, 150000], plan.minIncome, v => v ? `${money(v)}+ median` : 'Any income')}</label>
           <label class="lt"><span class="label">Homeowners</span>${opt('pOwn', [0, 0.5, 0.7, 0.85], plan.minOwner, v => v ? `${Math.round(v * 100)}%+ own` : 'Any')}</label>
         </div>
-        <label class="lt check"><input type="checkbox" id="pFollow" ${plan.followUps ? 'checked' : ''}><span>Include my Return later and No contact doors</span></label>`
+        <div class="row">
+          <label class="lt"><span class="label">Home value</span>${opt('pVal', [0, 200000, 300000, 400000, 500000, 750000], plan.minValue, v => v ? `${money(v)}+ median` : 'Any value')}</label>
+          <label class="lt"><span class="label">Houses, not apartments</span>${opt('pSF', [0, 0.6, 0.8, 0.9], plan.minSF, v => v ? `${Math.round(v * 100)}%+ houses` : 'Any mix')}</label>
+        </div>
+        <label class="lt check"><input type="checkbox" id="pFollow" ${plan.followUps ? 'checked' : ''}><span>Include my Return later and No contact doors</span></label>
+        <label class="lt check"><input type="checkbox" id="pRecent" ${plan.skipRecent ? 'checked' : ''}><span>Skip areas I knocked in the last 2 weeks</span></label>`
       : `
         <div class="row">
           <label class="lt"><span class="label">Stops in route</span>${opt('pBizSize', [8, 10, 15, 20, 30], plan.bizSize, v => `${v} stops`)}</label>
-          <label class="lt"><span class="label">Search within</span>${opt('pBizKm', [5, 10, 15, 25, 40], plan.bizKm, v => `${v} km`)}</label>
+          <label class="lt"><span class="label">Search within</span>${opt('pBizMi', [3, 5, 10, 15, 25], plan.bizMi, v => `${v} miles`)}</label>
         </div>
         <div class="cats">${BIZ_CATS.map(c => `<button type="button" class="chip" data-cat="${c.key}" aria-pressed="${plan.cats.includes(c.key)}">${c.label}</button>`).join('')}</div>
         <label class="lt check"><input type="checkbox" id="pChains" ${plan.skipChains ? 'checked' : ''}><span>Skip chain stores (no local decision maker)</span></label>`}
       </div>
-      <p>Searches around the middle of the map. Move the map or search a town first to plan somewhere else.</p>
+      <div class="list-tools">
+        <label class="lt"><span class="label">Measure distance from</span>${opt('pFrom', ['me', 'home', 'map'], plan.from, v => ({ me: 'My location now', home: plan.home ? `Home: ${plan.home.label.split(',')[0]}` : 'My home spot (set below)', map: 'Middle of the map' })[v])}</label>
+        ${plan.from === 'home' ? `<form class="row" id="pHomeForm"><input id="pHome" type="search" placeholder="Your town or address" value="${esc(plan.home ? plan.home.label : '')}" aria-label="Home spot"><button class="btn" type="submit" style="flex:none;height:42px">Set</button></form>` : ''}
+      </div>
+      <p>No start point needed: the app checks every neighborhood in range against your filters, picks the best areas, and gives each one a start house, a parking spot and a loop back to your car.</p>
       <div class="report-actions">
         <button class="btn primary" type="button" id="planGo" ${planBusy ? 'disabled' : ''}>${planBusy ? esc(planBusy) : 'Find the best 5 routes'}</button>
-        <button class="btn" type="button" id="planHere" ${planBusy ? 'disabled' : ''}>Use my location</button>
       </div></div>`;
     const R = plan.results && plan.results.mode === plan.mode ? plan.results : null;
     let results = '';
@@ -2530,16 +2543,28 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     el.innerHTML = form + results + note;
     el.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { plan.mode = b.dataset.mode; savePlan(); renderPlan(); drawPlan(); });
     const bind = (id, key, num = true) => { const x = $(id); if (x) x.onchange = () => { plan[key] = num ? +x.value : x.value; savePlan(); }; };
-    bind('pSize', 'size'); bind('pKm', 'km'); bind('pInc', 'minIncome'); bind('pOwn', 'minOwner'); bind('pBizSize', 'bizSize'); bind('pBizKm', 'bizKm');
+    bind('pSize', 'size'); bind('pVal', 'minValue'); bind('pSF', 'minSF');
+    if ($('pMi')) $('pMi').onchange = e => { plan.mi = +e.target.value; plan.km = plan.mi * MI; savePlan(); };
+    if ($('pBizMi')) $('pBizMi').onchange = e => { plan.bizMi = +e.target.value; plan.bizKm = plan.bizMi * MI; savePlan(); };
+    if ($('pRecent')) $('pRecent').onchange = e => { plan.skipRecent = e.target.checked; savePlan(); };
+    $('pFrom').onchange = e => { plan.from = e.target.value; savePlan(); renderPlan(); if (plan.from === 'home' && !plan.home) $('pHome').focus(); };
+    if ($('pHomeForm')) $('pHomeForm').onsubmit = async e => {
+      e.preventDefault(); const q = $('pHome').value.trim(); if (!q) return;
+      try { const [hit] = await search(q); if (!hit) return toast('Could not find that place.'); plan.home = { lat: +hit.lat, lng: +hit.lon, label: shortAddress(hit.address, hit.display_name) }; savePlan(); renderPlan(); toast('Home spot saved'); }
+      catch { toast('Search is not responding. Try again.'); }
+    }; bind('pInc', 'minIncome'); bind('pOwn', 'minOwner'); bind('pBizSize', 'bizSize');
     if ($('pFollow')) $('pFollow').onchange = e => { plan.followUps = e.target.checked; savePlan(); };
     if ($('pChains')) $('pChains').onchange = e => { plan.skipChains = e.target.checked; savePlan(); };
     el.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
       const k = b.dataset.cat; plan.cats = plan.cats.includes(k) ? plan.cats.filter(x => x !== k) : [...plan.cats, k]; savePlan(); renderPlan();
     });
-    $('planGo').onclick = () => { const c = map.getCenter(); runPlan([c.lat, c.lng]); };
-    $('planHere').onclick = () => {
-      if (!navigator.geolocation) return toast('Location is not available on this device.');
-      navigator.geolocation.getCurrentPosition(pos => runPlan([pos.coords.latitude, pos.coords.longitude]), () => toast('Allow location access, or move the map and use Find.'), { enableHighAccuracy: true, timeout: 12000 });
+    $('planGo').onclick = () => {
+      const c = map.getCenter();
+      if (plan.from === 'map') return runPlan([c.lat, c.lng]);
+      if (plan.from === 'home') return plan.home ? runPlan([plan.home.lat, plan.home.lng]) : toast('Set your home spot first.');
+      if (!navigator.geolocation) return toast('Location is not available on this device. Pick your home spot instead.');
+      planBusy = 'Finding where you are…'; renderPlan();
+      navigator.geolocation.getCurrentPosition(pos => runPlan([pos.coords.latitude, pos.coords.longitude]), () => { planBusy = ''; renderPlan(); toast('Allow location access, or measure from your home spot.'); }, { enableHighAccuracy: true, timeout: 12000 });
     };
     el.querySelectorAll('[data-start]').forEach(b => b.onclick = () => startPlanned(R.list[+b.dataset.start]));
     el.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { drawPlan(+b.dataset.show); showTab('map'); });
