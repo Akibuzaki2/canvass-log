@@ -3,7 +3,7 @@ import http from 'node:http'; import fs from 'node:fs'; import path from 'node:p
 const APP = path.resolve(process.argv[2]);
 const srv = http.createServer((q, r) => { const f = path.join(APP, q.url.split('?')[0] === '/' ? 'index.html' : q.url.split('?')[0]); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'Content-Type': f.endsWith('.html') ? 'text/html' : f.endsWith('.json') ? 'application/json' : 'application/octet-stream' }); r.end(d); } }); }).listen(8080);
 const browser = await chromium.launch();
-const spots = [['Middleton', 43.7110, -116.6085], ['Middleton2', 43.7036, -116.6260], ['Boulder', 40.0178, -105.2836], ['Nampa', 43.5860, -116.5770]];
+const spots = [['Boulder', 40.0178, -105.2836]];
 for (const [name, lat, lng] of spots) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
   await ctx.addInitScript(([lat, lng]) => { if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', 1); localStorage.setItem('canvass-log.view', JSON.stringify({ lat, lng, z: 18 })); localStorage.setItem('canvass-log.tab', 'map'); } }, [lat, lng]);
@@ -34,12 +34,12 @@ for (const [name, lat, lng] of spots) {
   const noPath = w.sections.filter(s => !(s.path || []).length).length;
   console.log(`${name}: ${hs.length} houses, ${w.sections.length} stretches (${noPath} with no line), ${gaps} breaks, line ${Math.round(len)} m vs door-to-door ${Math.round(straight)} m, ${segs} pieces, ${close} pass within 7 m of a house, errors ${JSON.stringify(errs)}`);
   if (where.length) console.log('  close at', where.slice(0, 8).join(' | '));
-  for (const pt of [].filter((_, i) => i % Math.max(1, Math.floor(where.length / 6)) === 0).slice(0, 6)) {
+  for (const pt of where.filter((_, i) => i % Math.max(1, Math.floor(where.length / 6)) === 0).slice(0, 6)) {
     const [la, ln] = pt.split(' ')[0].split(',');
     const q = `[out:json][timeout:25];(way(around:4,${la},${ln})[highway];node(around:12,${la},${ln})["addr:housenumber"];way(around:12,${la},${ln})[building];);out tags center;`;
     try { let j = null; for (const host of ['https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) { try { const r = await fetch(host + '?data=' + encodeURIComponent(q)); j = JSON.parse(await r.text()); break; } catch {} } if (!j) throw new Error('all mirrors');
       console.log('   ', pt, '->', j.elements.map(e => `${e.type}:${JSON.stringify(e.tags).slice(0, 140)}`).join(' || ')); } catch (e) { console.log('    overpass failed', e.message); }
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 6000));
   }
   { let prevH = null; const rows = [];
     for (const s of w.sections) {
