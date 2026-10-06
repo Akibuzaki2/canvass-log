@@ -2636,15 +2636,21 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     geoBusy = true;
     try {
       for (const e of allEvents().filter(x => !hasNum(x.lat) && !(evState[x.id] || {}).geo)) {
-        const q = [e.address, e.city && !String(e.address || '').includes(e.city) ? e.city : '', /\b(ID|Idaho)\b/.test(e.address || '') ? '' : 'Idaho'].filter(Boolean).join(', ') || e.venue;
-        if (!q) continue;
-        try {
-          const r = await fetch(`${NOMINATIM}/search?format=jsonv2&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`);
-          const [hit] = r.ok ? await r.json() : [];
-          stOf(e.id).geo = hit ? { lat: +hit.lat, lng: +hit.lon } : { lat: null };
-          saveState(); if (tabNow === 'events') renderEvents();
-        } catch { break; }
-        await new Promise(res => setTimeout(res, 1100));
+        // Try the street address, then the venue in its town, then just the town.
+        const addr = String(e.address || ''), street = addr.replace(/^[^,\d]*[A-Za-z][^,\d]*,\s*(?=\d)/, '');
+        const qs = [...new Set([street !== addr ? street : '', addr, [e.venue, e.city, 'Idaho'].filter(Boolean).join(', '), e.city ? `${e.city}, Idaho` : ''].filter(q => q && q.length > 3))];
+        let hit = null, failed = false;
+        for (const q of qs) {
+          try {
+            const r = await fetch(`${NOMINATIM}/search?format=jsonv2&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`);
+            [hit] = r.ok ? await r.json() : [];
+          } catch { failed = true; break; }
+          await new Promise(res => setTimeout(res, 1100));
+          if (hit) break;
+        }
+        if (failed) break;
+        stOf(e.id).geo = hit ? { lat: +hit.lat, lng: +hit.lon } : { lat: null };
+        saveState(); if (tabNow === 'events') renderEvents();
       }
     } finally { geoBusy = false; }
   }
@@ -2713,7 +2719,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const c = evState[e.id] && evState[e.id].census;
     if (c && c.owner != null) {
       const pct = Math.round(c.owner * 100);
-      add(pct >= 70 ? 10 : pct >= 55 ? 4 : pct < 40 ? -10 : 0, `${pct}% of homes within a mile are owner-occupied${c.income ? `; median household income $${Math.round(c.income / 1000)}k` : ''}`, 'U.S. Census survey');
+      const regional = /^(home_show|county_fair|business_expo|concert_sports)$/.test(e.type);
+      add(regional ? 0 : pct >= 70 ? 10 : pct >= 55 ? 4 : pct < 40 ? -10 : 0, `${pct}% of homes within a mile are owner-occupied${c.income ? `; median household income $${Math.round(c.income / 1000)}k` : ''}${regional ? ' (visitors come from all over, so this counts little)' : ''}`, 'U.S. Census survey');
     }
     const mi = miles(e);
     if (mi != null && mi > 50) add(-8, `${Math.round(mi)} miles away`, 'distance');
