@@ -21,23 +21,19 @@ for (const [name, lat, lng] of spots) {
   const pts = w.sections.flatMap(s => (s.path || []).flat());
   const hs = w.sections.flatMap(s => s.houses);
   let la0 = Math.min(...pts.map(p => p[0])), la1 = Math.max(...pts.map(p => p[0])), ln0 = Math.min(...pts.map(p => p[1])), ln1 = Math.max(...pts.map(p => p[1]));
-  const q = `[out:json][timeout:60];way[highway](${la0 - .001},${ln0 - .001},${la1 + .001},${ln1 + .001});out geom;`;
-  // Check against the very map data the app downloaded (geometry of every way it was given).
-  const nodes = new Map(got.filter(e => e.type === 'node').map(e => [e.id, e]));
-  const ways = got.filter(e => e.type === 'way' && e.tags && e.tags.highway).map(e => ({ tags: e.tags, geometry: e.geometry || (e.nodes || []).map(id => nodes.get(id)).filter(Boolean) }));
   const kx = Math.cos(lat * Math.PI / 180) * 111320, ky = 110540, xy = ([a, b]) => [(b - lng) * kx, (a - lat) * ky];
-  const good = [], bad = [];
-  for (const wy of ways) { const t = wy.tags || {}; const isBad = /^(driveway|parking_aisle|drive-through)$/.test(t.service || '') || /^(private|no)$/.test(t.access || '') || /^(no|private)$/.test(t.foot || ''); for (let i = 1; i < (wy.geometry || []).length; i++) (isBad ? bad : good).push([xy([wy.geometry[i - 1].lat, wy.geometry[i - 1].lon]), xy([wy.geometry[i].lat, wy.geometry[i].lon])]); }
   const sd = (p, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy; const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0; return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); };
-  const near = (p, S) => { let m = Infinity; for (const [a, b] of S) { const d = sd(p, a, b); if (d < m) m = d; } return m; };
-  let n = 0, off = 0, onBad = 0, len = 0, worst = 0; const offs = [];
-  for (const s of w.sections) for (const line of s.path || []) for (let i = 1; i < line.length; i++) {
-    const a = xy(line[i - 1]), b = xy(line[i]); len += Math.hypot(b[0] - a[0], b[1] - a[1]);
-    for (const t of [0, .25, .5, .75, 1]) { const m = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; n++; const d = near(m, good); if (d > worst) worst = d; if (d > 3) { off++; offs.push(line[i].join(',')); if (near(m, bad) < 3) onBad++; } }
-  }
-  const lines = w.sections.reduce((t, s) => t + (s.path || []).length, 0);
-  console.log(`${name}: ${hs.length} houses, ${w.sections.length} stretches, ${lines} lines, ${Math.round(len)} m, curbs ${hs.filter(h => h.curb).length}/${hs.length}, ways ${ways.length}, checked ${n}, off-network ${off} (on driveway/private ${onBad}), worst ${worst.toFixed(1)} m, errors ${JSON.stringify(errs)}`);
-  if (offs.length) console.log('  off at', offs.slice(0, 6).join(' | '));
+  // A line through a yard passes close to houses; a street line stays out in front of them.
+  const H = hs.map(h => xy([h.lat, h.lng]));
+  let segs = 0, close = 0, len = 0, straight = 0, gaps = 0; const where = [];
+  for (const s of w.sections) { gaps += Math.max(0, (s.path || []).length - 1); for (const line of s.path || []) for (let i = 1; i < line.length; i++) {
+    const a = xy(line[i - 1]), b = xy(line[i]); segs++; len += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const m = Math.min(...H.map(p => sd(p, a, b))); if (m < 7) { close++; where.push(line[i].join(',') + ' ' + m.toFixed(1)); }
+  } }
+  for (let i = 1; i < H.length; i++) straight += Math.hypot(H[i][0] - H[i - 1][0], H[i][1] - H[i - 1][1]);
+  const noPath = w.sections.filter(s => !(s.path || []).length).length;
+  console.log(`${name}: ${hs.length} houses, ${w.sections.length} stretches (${noPath} with no line), ${gaps} breaks, line ${Math.round(len)} m vs door-to-door ${Math.round(straight)} m, ${segs} pieces, ${close} pass within 7 m of a house, errors ${JSON.stringify(errs)}`);
+  if (where.length) console.log('  close at', where.slice(0, 8).join(' | '));
   const spurs = hs.filter(h => h.curb).map(h => Math.hypot((h.curb[0] - h.lat) * ky, (h.curb[1] - h.lng) * kx)).sort((a, b) => a - b);
   console.log('  door spur m: median', Math.round(spurs[spurs.length >> 1] || 0), 'max', Math.round(spurs[spurs.length - 1] || 0));
   await page.screenshot({ path: name + '.png' });
