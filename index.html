@@ -194,7 +194,8 @@ main { flex: 1; min-height: 0; position: relative; }
 .seg button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
 .panel { display: flex; flex-direction: column; gap: 12px; }
 .panel > * { flex: none; }
-.lt.check { flex-direction: row; align-items: center; gap: 8px; padding-top: 18px; font-size: 14px; }
+.list-tools label.lt.check { flex-direction: row; align-items: center; gap: 8px; font-size: 14px; }
+.list-tools .row label.lt.check { padding-top: 18px; }
 .lt.check input { width: 22px; height: 22px; accent-color: var(--accent); }
 .rows li.street { display: flex; justify-content: space-between; padding: 10px 2px 0; font: 700 14px var(--font-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .rows .wrow { grid-template-columns: 26px 1fr auto; }
@@ -207,7 +208,23 @@ main { flex: 1; min-height: 0; position: relative; }
   background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; box-shadow: var(--shadow);
 }
 .walkbar .wb-text { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.walkbar .btn { height: 38px; padding: 0 12px; font-size: 14px; flex: none; }
+.walkbar .btn, .walkbar .btn.primary { height: 38px; padding: 0 14px; font-size: 14px; flex: none; }
+.seg { grid-template-columns: repeat(3, 1fr); }
+.seg.small { grid-template-columns: 1fr 1fr; background: var(--paper); }
+a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; color: var(--ink); }
+.cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.cats .chip { box-shadow: none; }
+.cats .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.plan-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.plan-top { display: flex; gap: 10px; align-items: flex-start; }
+.plan-titles { flex: 1; min-width: 0; }
+.plan-titles h3 { margin: 0; font-size: 17px; line-height: 1.25; overflow-wrap: anywhere; }
+.plan-titles .sub { font-size: 13px; color: var(--muted); }
+.rank { flex: none; width: 28px; height: 28px; border-radius: 8px; background: var(--ink); color: var(--paper); display: grid; place-items: center; font: 700 16px var(--font-label); }
+.score { flex: none; font: 700 22px/1 var(--font-label); color: var(--accent); font-variant-numeric: tabular-nums; }
+.why { margin: 0; padding-left: 18px; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
+p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
+.rank-pin { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font: 700 14px var(--font-label); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 
 /* Tab bar */
 .tabs {
@@ -314,9 +331,11 @@ main { flex: 1; min-height: 0; position: relative; }
   </section>
   <section class="view" id="listView" aria-label="List" hidden>
     <div class="seg" role="tablist" aria-label="List mode">
+      <button type="button" role="tab" id="segPlan" aria-selected="false">Plan</button>
       <button type="button" role="tab" id="segWalk" aria-selected="false">Walk route</button>
       <button type="button" role="tab" id="segLog" aria-selected="true">Visit log</button>
     </div>
+    <div class="panel" id="planPanel" hidden></div>
     <div class="panel" id="walkPanel" hidden></div>
     <div class="panel" id="logPanel">
     <div class="list-tools">
@@ -378,6 +397,10 @@ main { flex: 1; min-height: 0; position: relative; }
     <div class="field">
       <label class="label" for="fAddress">Address</label>
       <input id="fAddress" required>
+    </div>
+    <div class="field" id="bizWrap" hidden>
+      <label class="label" for="fBiz">Business</label>
+      <input id="fBiz" autocapitalize="words">
     </div>
     <div class="field">
       <label class="label" for="fArea">Neighborhood</label>
@@ -545,7 +568,7 @@ main { flex: 1; min-height: 0; position: relative; }
         fillColor: planned ? '#ffffff' : cssVar(s.color), fillOpacity: 1, bubblingMouseEvents: false,
       });
       m.on('click', () => openSheet(p.id));
-      m.bindTooltip(esc(p.address), { direction: 'top', offset: [0, -8] });
+      m.bindTooltip(esc(p.biz ? `${p.biz} · ${p.address}` : p.address), { direction: 'top', offset: [0, -8] });
       m.addTo(pinLayer);
     }
   }
@@ -670,7 +693,7 @@ main { flex: 1; min-height: 0; position: relative; }
     selStatus = ''; paintStatus();
     $('fAddress').value = known ? address : ''; $('fAddress').placeholder = 'Looking up…'; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = address; $('sheetSub').textContent = 'New address';
-    $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || '';
+    $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
     fillQuick(null); showSheet('sheet');
   }
@@ -683,7 +706,7 @@ main { flex: 1; min-height: 0; position: relative; }
     $('fAddress').value = p.address; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = p.address;
     $('sheetSub').textContent = `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
-    $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || '';
+    $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
     const h = (p.history || []).slice().reverse();
     $('historyWrap').hidden = !h.length;
     $('history').innerHTML = h.map(x => { const s = statusOf(x.status); return `<li style="--c:${s.color}"><span class="dot"></span><time>${fmtDateTime(x.t)}</time>${s.label}</li>`; }).join('');
@@ -710,7 +733,8 @@ main { flex: 1; min-height: 0; position: relative; }
     if (!address) { saveThenNext = false; $('fAddress').focus(); toast('Add the address before saving.'); return; }
     const wid = draft.walkId;
     const now = Date.now();
-    const fields = { address, area: $('fArea').value.trim(), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
+    const isBiz = !$('bizWrap').hidden;
+    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
     let p = draft.id && places.find(x => x.id === draft.id);
     if (p) {
       // Log a visit when the status changes, or when the door is knocked again on a new day.
@@ -814,7 +838,7 @@ main { flex: 1; min-height: 0; position: relative; }
     const out = [];
     for (const p of places) {
       if (af !== 'all' && areaName(p) !== af) continue;
-      if (q && ![p.address, p.name, p.phone, p.notes, p.area].some(v => (v || '').toLowerCase().includes(q))) continue;
+      if (q && ![p.address, p.biz, p.name, p.phone, p.notes, p.area].some(v => (v || '').toLowerCase().includes(q))) continue;
       const hist = p.history || [];
       if (!hist.length) {
         // Planned doors have no visit yet; show them when no date limit is set.
@@ -896,7 +920,7 @@ main { flex: 1; min-height: 0; position: relative; }
     }
     lines.push('', 'Visits:');
     visits.slice().sort((a, b) => a.t - b.t).forEach(v => {
-      const bits = [range().oneDay ? fmtTime(v.t) : fmtDateTime(v.t), v.p.address, statusOf(v.status).label, v.p.name, v.p.phone].filter(Boolean);
+      const bits = [range().oneDay ? fmtTime(v.t) : fmtDateTime(v.t), v.p.biz, v.p.address, statusOf(v.status).label, v.p.name, v.p.phone].filter(Boolean);
       lines.push(`- ${bits.join(' | ')}${v.p.notes ? `\n  Note: ${v.p.notes}` : ''}`);
     });
     return lines.join('\n');
@@ -912,8 +936,8 @@ main { flex: 1; min-height: 0; position: relative; }
   }
   function exportVisits(visits) {
     const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['Date', 'Time', 'Address', 'Neighborhood', 'Status', 'Name', 'Phone', 'Notes', 'Latitude', 'Longitude'];
-    const rows = visits.map(v => [dayKey(v.t), fmtTime(v.t), v.p.address, areaName(v.p), statusOf(v.status).label, v.p.name, v.p.phone, v.p.notes, v.p.lat.toFixed(6), v.p.lng.toFixed(6)].map(q).join(','));
+    const head = ['Date', 'Time', 'Business', 'Address', 'Neighborhood', 'Status', 'Name', 'Phone', 'Notes', 'Latitude', 'Longitude'];
+    const rows = visits.map(v => [dayKey(v.t), fmtTime(v.t), v.p.biz, v.p.address, areaName(v.p), statusOf(v.status).label, v.p.name, v.p.phone, v.p.notes, v.p.lat.toFixed(6), v.p.lng.toFixed(6)].map(q).join(','));
     download(`canvass-visits-${stamp()}.csv`, [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
   }
 
@@ -941,7 +965,7 @@ main { flex: 1; min-height: 0; position: relative; }
       const meta = [s.label, p.name, p.phone].filter(Boolean).map(esc).join(' · ');
       return `<li><button type="button" data-id="${p.id}" style="--c:${s.color}">
         <span class="dot ${s.key === 'planned' ? 'planned' : ''}"></span>
-        <span class="addr">${esc(p.address)}</span><span class="when">${when}</span>
+        <span class="addr">${p.biz ? `${esc(p.biz)} · ` : ''}${esc(p.address)}</span><span class="when">${when}</span>
         <span class="meta">${meta}<br><span class="area">${esc(areaName(p))}</span></span>
         ${p.notes ? `<span class="note">${esc(p.notes)}</span>` : ''}
       </button></li>`;
@@ -1000,7 +1024,8 @@ main { flex: 1; min-height: 0; position: relative; }
     return m ? { num: m[1], street: m[2] } : { num: '', street: first };
   }
 
-  function buildRoute(data, start, r) {
+  function buildRoute(data, start, r, opts = {}) {
+    const within = (xy, lat, lng) => opts.poly ? inPoly(lng, lat, opts.poly) : dist(xy, sxy) <= r;
     const P = projector(start.lat, start.lng), sxy = [0, 0];
     const streets = new Map();
     const houses = [];
@@ -1022,7 +1047,9 @@ main { flex: 1; min-height: 0; position: relative; }
       else if (el.geometry && el.geometry.length) { [lat, lng] = centroid(el.geometry); area = polyArea(el.geometry.map(g => P(g.lat, g.lon))); }
       else continue;
       const xy = P(lat, lng);
-      if (dist(xy, sxy) > r) continue;
+      if (!within(xy, lat, lng)) continue;
+      if (/^(apartments|commercial|retail|industrial|office|warehouse|school|church|hotel|hospital|garage|garages|shed)$/.test(t.building || '')) continue;
+      if (t.shop || t.office || t.amenity || t.craft) continue; // a business, not a home
       if (t['addr:housenumber']) {
         const h = { id: `${el.type[0]}${el.id}`, lat, lng, xy, num: t['addr:housenumber'].split(/[;,]/)[0].trim(), street: t['addr:street'] || '' };
         houses.push(h); addrPts.push(xy);
@@ -1036,7 +1063,7 @@ main { flex: 1; min-height: 0; position: relative; }
     // Doors already logged in the app that OSM doesn't know about join the route too.
     for (const p of places) {
       const xy = P(p.lat, p.lng);
-      if (dist(xy, sxy) > r) continue;
+      if (!within(xy, p.lat, p.lng) || p.kind === 'business') continue;
       const { num, street } = splitAddress(p.address);
       const match = kept.find(h => dist(h.xy, xy) < 15 || (num && h.num && h.num === num && normStreet(h.street) === normStreet(street)));
       if (match) { match.placeId = p.id; continue; }
@@ -1090,7 +1117,18 @@ main { flex: 1; min-height: 0; position: relative; }
       route.push({ street: s.street, hs, cont: seen });
       cur = hs[hs.length - 1].xy;
     }
-    return route.map(s => ({ street: s.street, cont: !!s.cont, houses: s.hs.map(h => ({ id: h.id, lat: h.lat, lng: h.lng, num: h.num, street: h.street === 'Other houses' ? '' : h.street, placeId: h.placeId || null })) }));
+    let left = opts.limit || Infinity;
+    const placeById = id => places.find(x => x.id === id);
+    return route.map(s => {
+      const hs = [];
+      for (const h of s.hs) {
+        if (left <= 0) break;
+        if (opts.keep && !opts.keep(h.placeId ? placeById(h.placeId) : null)) continue;
+        hs.push({ id: h.id, lat: h.lat, lng: h.lng, num: h.num, street: h.street === 'Other houses' ? '' : h.street, placeId: h.placeId || null });
+        left--;
+      }
+      return { street: s.street, cont: !!s.cont, houses: hs };
+    }).filter(s => s.houses.length);
   }
 
   async function startWalk(lat, lng, address, area) {
@@ -1122,6 +1160,7 @@ main { flex: 1; min-height: 0; position: relative; }
   }
   const doneToday = p => !!p && (p.history || []).some(x => isToday(x.t));
   function houseLabel(h) {
+    if (h.biz) return h.biz;
     const p = placeFor(h);
     if (p) return p.address.split(',')[0];
     if (h.num) return `${h.num} ${h.street}`.trim();
@@ -1142,7 +1181,11 @@ main { flex: 1; min-height: 0; position: relative; }
     const h = walkHouses().find(x => x.id === id); if (!h) return;
     const p = placeFor(h);
     if (p) openSheet(p.id);
-    else {
+    else if (h.biz) {
+      openNew(h.lat, h.lng, h.addr || 'Finding address…', !!h.addr, '');
+      if (!h.addr) lookupInto(h.lat, h.lng);
+      $('fBiz').value = h.biz; $('bizWrap').hidden = false; $('sheetSub').textContent = h.cat || 'Business';
+    } else {
       const full = h.num ? [`${h.num} ${h.street}`, walk.start.suffix].filter(Boolean).join(', ') : 'Finding address…';
       openNew(h.lat, h.lng, full, !!h.num, walk.start.area);
       if (!h.num) lookupInto(h.lat, h.lng);
@@ -1156,6 +1199,13 @@ main { flex: 1; min-height: 0; position: relative; }
     openHouse(h.id);
   }
   // When a door on the route is opened another way (a pin, the visit log), still offer Save & next.
+  // Google Maps driving directions through the next stops (it takes up to 9 waypoints).
+  function dirLink(from) {
+    const all = walkHouses(), i = all.findIndex(h => h.id === from.id);
+    const stops = all.slice(i).filter(h => !doneToday(placeFor(h))).slice(0, 10);
+    const dest = stops[stops.length - 1], way = stops.slice(0, -1).map(h => `${h.lat},${h.lng}`).join('|');
+    return `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${dest.lat},${dest.lng}${way ? `&waypoints=${encodeURIComponent(way)}` : ''}`;
+  }
   function updateSaveNext() {
     const b = $('saveNextBtn');
     if (!walk || !draft) { b.hidden = true; return; }
@@ -1175,11 +1225,16 @@ main { flex: 1; min-height: 0; position: relative; }
   let mode = 'log';
   try { mode = localStorage.getItem('canvass-log.listmode') || (walk ? 'walk' : 'log'); } catch {}
   function listMode(m) {
-    mode = m;
-    $('walkPanel').hidden = m !== 'walk'; $('logPanel').hidden = m === 'walk';
-    $('segWalk').setAttribute('aria-selected', String(m === 'walk')); $('segLog').setAttribute('aria-selected', String(m !== 'walk'));
-    try { localStorage.setItem('canvass-log.listmode', m); } catch {}
+    mode = ['plan', 'walk', 'log'].includes(m) ? m : 'log';
+    for (const k of ['plan', 'walk', 'log']) {
+      $(k + 'Panel').hidden = mode !== k;
+      $('seg' + k[0].toUpperCase() + k.slice(1)).setAttribute('aria-selected', String(mode === k));
+    }
+    try { localStorage.setItem('canvass-log.listmode', mode); } catch {}
+    if (typeof drawPlan === 'function' && planReady) drawPlan();
   }
+  let planReady = false;
+  $('segPlan').addEventListener('click', () => listMode('plan'));
   $('segWalk').addEventListener('click', () => listMode('walk'));
   $('segLog').addEventListener('click', () => listMode('log'));
 
@@ -1192,6 +1247,7 @@ main { flex: 1; min-height: 0; position: relative; }
         <div class="report-actions">
           <button class="btn primary" type="button" id="walkFromMe">Start from my location</button>
           <button class="btn" type="button" id="walkPick">Pick a house on the map</button>
+          <button class="btn" type="button" id="walkPlan">Plan the best route</button>
         </div></div>`;
       $('walkFromMe').onclick = () => {
         if (!navigator.geolocation) return toast('Location is not available on this device.');
@@ -1199,6 +1255,7 @@ main { flex: 1; min-height: 0; position: relative; }
         navigator.geolocation.getCurrentPosition(pos => startWalk(pos.coords.latitude, pos.coords.longitude),
           () => toast('Allow location access, or pick a house on the map instead.'), { enableHighAccuracy: true, timeout: 12000 });
       };
+      $('walkPlan').onclick = () => listMode('plan');
       $('walkPick').onclick = () => { showTab('map'); toast('Tap the house you are starting at, then Start walk here'); };
       renderWalkbar(); return;
     }
@@ -1206,18 +1263,19 @@ main { flex: 1; min-height: 0; position: relative; }
     const all = walkHouses(), done = all.filter(h => doneToday(placeFor(h))).length, nxt = nextHouse(null);
     const hideDone = !!walk.hideDone;
     const head = `<div class="report">
-      <div class="report-head"><h2>From ${esc(walk.start.address.split(',')[0] || 'your location')}</h2>
+      <div class="report-head"><h2>${walk.plan ? esc((walk.plan.kind === 'business' ? 'Business route: ' : 'Planned: ') + walk.plan.title) : `From ${esc(walk.start.address.split(',')[0] || 'your location')}`}</h2>
         <span class="rate">${done} of ${all.length} done today</span></div>
       ${walk.error ? `<p class="warn">${esc(walk.error)}</p>` : ''}
       ${!walk.error && !all.length ? `<p class="warn">OpenStreetMap has no houses mapped here. Try a bigger distance, or tap houses on the map.</p>` : ''}
       <div class="bar" aria-hidden="true"><span style="--c:var(--st-lead);flex:${done}"></span><span style="--c:var(--line);flex:${all.length - done}"></span></div>
       <div class="list-tools"><div class="row">
-        <label class="lt"><span class="label">Distance</span>
+        <label class="lt" ${walk.plan ? 'hidden' : ''}><span class="label">Distance</span>
           <select id="walkRadius">${[150, 250, 400, 600].map(r => `<option value="${r}" ${r === walk.radius ? 'selected' : ''}>Within ${r} m</option>`).join('')}</select></label>
         <label class="lt check"><input type="checkbox" id="walkHide" ${hideDone ? 'checked' : ''}><span>Hide doors done today</span></label>
       </div></div>
       <div class="report-actions">
         <button class="btn primary" type="button" id="walkNext" ${nxt ? '' : 'disabled'}>${nxt ? `Next: ${esc(houseLabel(nxt))}` : 'All done today'}</button>
+        ${walk.plan && walk.plan.kind === 'business' && nxt ? `<a class="btn" id="walkDirs" target="_blank" rel="noopener" href="${dirLink(nxt)}">Driving directions</a>` : ''}
         <button class="btn" type="button" id="walkMap">Show on map</button>
         <button class="btn" type="button" id="walkEnd">End walk</button>
       </div></div>`;
@@ -1231,7 +1289,7 @@ main { flex: 1; min-height: 0; position: relative; }
         return `<li><button type="button" class="wrow${nxt && nxt.id === h.id ? ' next' : ''}${today ? ' done' : ''}" data-h="${esc(h.id)}" style="--c:${p && p.status ? st.color : 'var(--st-planned)'}">
           <span class="ord">${n}</span>
           <span class="addr">${esc(houseLabel(h))}</span><span class="when">${lastVisit(p)}</span>
-          <span class="meta"><span class="dot ${p && p.status ? '' : 'planned'}"></span>${[status, p && p.name].filter(Boolean).map(esc).join(' · ')}</span>
+          <span class="meta"><span class="dot ${p && p.status ? '' : 'planned'}"></span>${[status, h.cat, p && p.name].filter(Boolean).map(esc).join(' · ')}</span>
         </button></li>`;
       }).join('');
       return rows ? `<li class="street"><span>${esc(s.street)}${s.cont ? ' (continued)' : ''}</span><span>${s.houses.length}</span></li>${rows}` : '';
@@ -1274,6 +1332,387 @@ main { flex: 1; min-height: 0; position: relative; }
     $('wbList').onclick = () => { listMode('walk'); showTab('list'); };
   }
 
+
+  // ---------- Route planner ----------
+  // Homes: score Census block groups (income, homeownership, single-family homes, density) together with
+  // your own results there, then build a walk inside the best ones.
+  // Businesses: pull named businesses from OpenStreetMap and find the tightest driving loops of fresh prospects.
+  const ACS_VARS = ['B19013_001E', 'B25003_001E', 'B25003_002E', 'B25024_001E', 'B25024_002E', 'B25024_003E', 'B25001_001E', 'B25077_001E'];
+  const BIZ_CATS = [
+    { key: 'retail', label: 'Retail shops', q: ['nwr["shop"]["name"]'] },
+    { key: 'food', label: 'Restaurants & cafes', q: ['nwr["amenity"~"^(restaurant|cafe|fast_food|bar|pub|ice_cream)$"]["name"]'] },
+    { key: 'office', label: 'Offices', q: ['nwr["office"]["name"]'] },
+    { key: 'health', label: 'Health & medical', q: ['nwr["amenity"~"^(dentist|doctors|clinic|veterinary|pharmacy)$"]["name"]', 'nwr["healthcare"]["name"]'] },
+    { key: 'auto', label: 'Auto', q: ['nwr["shop"~"^(car|car_repair|car_parts|tyres)$"]["name"]', 'nwr["amenity"~"^(car_wash|car_rental)$"]["name"]'] },
+    { key: 'trades', label: 'Trades & services', q: ['nwr["craft"]["name"]'] },
+    { key: 'beauty', label: 'Beauty & fitness', q: ['nwr["shop"~"^(hairdresser|beauty|massage|tattoo|cosmetics)$"]["name"]', 'nwr["leisure"="fitness_centre"]["name"]'] },
+  ];
+  const PLAN_KEY = 'canvass-log.plan';
+  let plan = { mode: 'homes', size: 40, minIncome: 0, minOwner: 0, km: 5, followUps: true, bizSize: 15, bizKm: 15, cats: ['retail', 'food', 'office', 'health', 'auto', 'trades', 'beauty'], skipChains: true, results: null, center: null };
+  try { Object.assign(plan, JSON.parse(localStorage.getItem(PLAN_KEY)) || {}); } catch {}
+  function savePlan() { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); } catch {} }
+  let planBusy = '';
+
+  function inPoly(x, y, rings) {
+    let inside = false;
+    for (const ring of rings) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  const km = (a, b) => { const R = 6371, dLat = (b[0] - a[0]) * Math.PI / 180, dLng = (b[1] - a[1]) * Math.PI / 180; const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * Math.PI / 180) * Math.cos(b[0] * Math.PI / 180) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(s)); };
+  const money = n => n == null ? 'unknown' : n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${n}`;
+
+  // Your own track record, used by both modes.
+  function historyStats(filterFn) {
+    const s = { visited: 0, leads: 0, rejected: 0, pending: 0, recent: 0 };
+    for (const p of places) {
+      if (!filterFn(p)) continue;
+      const h = p.history || [];
+      if (h.length) s.visited++;
+      if (p.status === 'lead') s.leads++;
+      if (p.status === 'rejected') s.rejected++;
+      if (p.status === 'return' || p.status === 'nocontact') s.pending++;
+      if (h.length && Date.now() - h.at(-1).t < 14 * 864e5) s.recent++;
+    }
+    return s;
+  }
+  function globalLeadRate() {
+    const g = historyStats(() => true);
+    return g.visited >= 10 ? Math.max(0.02, g.leads / g.visited) : 0.1;
+  }
+
+  // ----- Census lookups -----
+  async function bgLayer() {
+    for (const v of ['ACS2024', 'ACS2023', 'ACS2022']) {
+      try {
+        const base = `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_${v}/MapServer`;
+        const r = await fetch(`${base}?f=json`); if (!r.ok) continue;
+        const j = await r.json();
+        const layer = (j.layers || []).find(l => /block groups/i.test(l.name));
+        if (layer) return { base, id: layer.id, year: +v.slice(3) };
+      } catch {}
+    }
+    throw new Error('Census map service is not responding');
+  }
+  async function blockGroups(center, radiusKm) {
+    const L0 = await bgLayer();
+    const dLat = radiusKm / 110.54, dLng = radiusKm / (111.32 * Math.cos(center[0] * Math.PI / 180));
+    const env = [center[1] - dLng, center[0] - dLat, center[1] + dLng, center[0] + dLat].join(',');
+    const url = `${L0.base}/${L0.id}/query?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true&maxAllowableOffset=0.0002&geometryPrecision=5&f=json`;
+    const r = await fetch(url); if (!r.ok) throw new Error('Census map service error');
+    const j = await r.json();
+    const bgs = (j.features || []).map(f => {
+      const a = f.attributes;
+      const lat = parseFloat(a.CENTLAT || a.INTPTLAT), lng = parseFloat(a.CENTLON || a.INTPTLON);
+      return { geoid: a.GEOID, state: a.STATE, county: a.COUNTY, tract: a.TRACT, bg: a.BLKGRP, aland: +a.AREALAND || 0, lat, lng, rings: f.geometry ? f.geometry.rings : [] };
+    }).filter(b => b.geoid && isFinite(b.lat) && km(center, [b.lat, b.lng]) <= radiusKm);
+    return { bgs, year: L0.year };
+  }
+  async function acs(bgs, year) {
+    const counties = [...new Set(bgs.map(b => b.state + b.county))];
+    const out = new Map();
+    for (const sc of counties) {
+      let rows = null;
+      for (const y of [year, year - 1, 2023]) {
+        try {
+          const r = await fetch(`https://api.census.gov/data/${y}/acs/acs5?get=${ACS_VARS.join(',')}&for=block%20group:*&in=state:${sc.slice(0, 2)}&in=county:${sc.slice(2)}&in=tract:*`);
+          if (r.ok) { rows = await r.json(); break; }
+        } catch {}
+      }
+      if (!rows) throw new Error('Census data is not responding');
+      const head = rows[0];
+      for (const row of rows.slice(1)) {
+        const o = Object.fromEntries(head.map((h, i) => [h, row[i]]));
+        const n = k => { const v = +o[k]; return isFinite(v) && v >= 0 ? v : null; };
+        out.set(o.state + o.county + o.tract + o['block group'], {
+          income: n('B19013_001E'), occupied: n('B25003_001E'), owner: n('B25003_002E'),
+          structures: n('B25024_001E'), detached: n('B25024_002E'), attached: n('B25024_003E'), units: n('B25001_001E'), value: n('B25077_001E'),
+        });
+      }
+    }
+    return out;
+  }
+
+  async function planHomes(center) {
+    planBusy = 'Loading Census neighborhoods…'; renderPlan();
+    const { bgs, year } = await blockGroups(center, plan.km);
+    planBusy = `Reading income and homeownership for ${bgs.length} neighborhoods…`; renderPlan();
+    const stats = await acs(bgs, year);
+    const prior = globalLeadRate(), N = plan.size;
+    const scored = [];
+    for (const b of bgs) {
+      const c = stats.get(b.geoid); if (!c || !c.units) continue;
+      const sf = c.structures ? ((c.detached || 0) + (c.attached || 0)) / c.structures : 0.5;
+      const ownRate = c.occupied ? (c.owner || 0) / c.occupied : null;
+      const homes = Math.round(c.units * sf);
+      const density = b.aland ? homes / (b.aland / 1e6) : 0;
+      if (plan.minIncome && (c.income == null || c.income < plan.minIncome)) continue;
+      if (plan.minOwner && (ownRate == null || ownRate < plan.minOwner)) continue;
+      const h = historyStats(p => inPoly(p.lng, p.lat, b.rings));
+      const fresh = Math.max(0, homes - h.visited);
+      const targets = fresh + (plan.followUps ? h.pending : 0);
+      if (homes < Math.min(N, 15) || targets < N * 0.6) continue; // too few houses, or already worked
+      const conv = (h.leads + prior * 5) / (h.visited + 5);
+      const rejRate = h.visited ? h.rejected / h.visited : 0;
+      const d = km(center, [b.lat, b.lng]);
+      const sc = {
+        income: c.income == null ? 0.4 : Math.max(0, Math.min(1, Math.log(c.income / 40000) / Math.log(5))),
+        owner: (ownRate ?? 0.5) * 0.7 + sf * 0.3,
+        density: Math.min(1, density / 900),
+        untapped: Math.min(1, targets / (N * 3)),
+        conv: Math.min(1, conv / (prior * 2)),
+      };
+      let score = 0.22 * sc.income + 0.26 * sc.owner + 0.17 * sc.density + 0.2 * sc.untapped + 0.15 * sc.conv;
+      if (h.visited >= 8 && rejRate > 0.5) score *= 0.6;
+      if (h.recent > N / 2) score *= 0.8;
+      score *= 1 - 0.25 * Math.min(1, d / plan.km);
+      const why = [];
+      if (ownRate != null) why.push(`${Math.round(ownRate * 100)}% own their home`);
+      why.push(`${money(c.income)} median income`);
+      if (c.value) why.push(`${money(c.value)} median home value`);
+      why.push(`about ${homes} houses${h.visited ? `, ${fresh} never knocked` : ', none knocked yet'}`);
+      if (h.pending && plan.followUps) why.push(`${h.pending} follow-up${h.pending === 1 ? '' : 's'} waiting`);
+      if (h.visited >= 5) why.push(`your lead rate here: ${Math.round((h.leads / h.visited) * 100)}%`);
+      if (h.visited >= 8 && rejRate > 0.5) why.push(`many rejections here (${Math.round(rejRate * 100)}%)`);
+      scored.push({ kind: 'homes', id: b.geoid, title: `Block group ${b.bg}, tract ${(+b.tract / 100).toString()}`, lat: b.lat, lng: b.lng, rings: b.rings, score: Math.round(score * 100), why, d, homes, stats: { income: c.income, own: ownRate, sf, density: Math.round(density), ...h } });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return { list: scored.slice(0, 5), considered: bgs.length };
+  }
+
+  async function planBusiness(center) {
+    const cats = BIZ_CATS.filter(c => plan.cats.includes(c.key));
+    if (!cats.length) throw new Error('Pick at least one kind of business');
+    planBusy = 'Finding businesses…'; renderPlan();
+    const r = plan.bizKm * 1000;
+    const q = `[out:json][timeout:60];(${cats.flatMap(c => c.q.map(x => `${x}(around:${r},${center[0]},${center[1]});`)).join('')});out center tags 4000;`;
+    const res = await fetch(OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    if (!res.ok) throw new Error('OpenStreetMap is busy. Try again in a minute.');
+    const data = await res.json();
+    planBusy = 'Building routes…'; renderPlan();
+    const catOf = t => {
+      if (t.shop && /^(car|car_repair|car_parts|tyres)$/.test(t.shop) || /^(car_wash|car_rental)$/.test(t.amenity || '')) return 'Auto';
+      if (/^(hairdresser|beauty|massage|tattoo|cosmetics)$/.test(t.shop || '') || t.leisure === 'fitness_centre') return 'Beauty & fitness';
+      if (t.healthcare || /^(dentist|doctors|clinic|veterinary|pharmacy)$/.test(t.amenity || '')) return 'Health & medical';
+      if (t.amenity) return 'Restaurants & cafes';
+      if (t.office) return 'Office';
+      if (t.craft) return 'Trades & services';
+      return 'Retail';
+    };
+    const seen = new Set(), biz = [];
+    for (const el of data.elements || []) {
+      const t = el.tags || {}, lat = el.lat ?? el.center?.lat, lng = el.lon ?? el.center?.lon;
+      if (!t.name || lat == null) continue;
+      const key = t.name.toLowerCase() + '|' + lat.toFixed(4) + lng.toFixed(4);
+      if (seen.has(key)) continue; seen.add(key);
+      if (plan.skipChains && (t.brand || t['brand:wikidata'])) continue;
+      const p = places.find(x => km([x.lat, x.lng], [lat, lng]) < 0.03 && (!x.biz || x.biz.toLowerCase() === t.name.toLowerCase()));
+      if (p && (p.status === 'rejected' || p.status === 'lead')) continue; // already decided
+      if (p && p.history && p.history.length && p.status !== 'return' && Date.now() - p.history.at(-1).t < 14 * 864e5) continue;
+      const street = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
+      const addr = street ? [street, t['addr:city']].filter(Boolean).join(', ') : '';
+      biz.push({ id: `${el.type[0]}${el.id}`, lat, lng, biz: t.name, cat: catOf(t), addr, placeId: p ? p.id : null, w: p && (p.status === 'return' || p.status === 'nocontact') ? 1.6 : 1 });
+    }
+    const N = Math.min(plan.bizSize, biz.length);
+    if (N < 3) return { list: [], considered: biz.length };
+    // Candidate route around every business: its N nearest neighbours, scored by prospects per km driven.
+    const prior = globalLeadRate();
+    const cands = [];
+    const step = Math.max(1, Math.floor(biz.length / 400));
+    for (let i = 0; i < biz.length; i += step) {
+      const c = biz[i];
+      const near = biz.map(b => [km([c.lat, c.lng], [b.lat, b.lng]), b]).sort((a, b) => a[0] - b[0]).slice(0, N).map(x => x[1]);
+      const spread = near.reduce((s, b) => s + km([c.lat, c.lng], [b.lat, b.lng]), 0) / N;
+      cands.push({ c, near, spread });
+    }
+    cands.sort((a, b) => a.spread - b.spread);
+    const picked = [];
+    for (const cand of cands.slice(0, 60)) {
+      const ids = new Set(cand.near.map(b => b.id));
+      if (picked.some(p => p.stops.filter(s => ids.has(s.id)).length > N * 0.3)) continue;
+      const stops = tour(cand.near, center);
+      let len = 0; for (let i = 1; i < stops.length; i++) len += km([stops[i - 1].lat, stops[i - 1].lng], [stops[i].lat, stops[i].lng]);
+      const reach = km(center, [stops[0].lat, stops[0].lng]);
+      const value = stops.reduce((s, b) => s + b.w, 0);
+      const h = historyStats(p => p.biz && km([p.lat, p.lng], [cand.c.lat, cand.c.lng]) < Math.max(1, cand.spread * 2));
+      const conv = (h.leads + prior * 5) / (h.visited + 5);
+      const score = (value / (len + reach * 0.5 + 2)) * (0.6 + 0.4 * Math.min(1, conv / (prior * 2)));
+      const cats = Object.entries(stops.reduce((m, b) => (m[b.cat] = (m[b.cat] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]);
+      const towns = [...new Set(stops.map(b => (b.addr.split(', ')[1] || '').trim()).filter(Boolean))];
+      const why = [`${stops.length} stops over ${len.toFixed(1)} km`, `${reach.toFixed(1)} km from your start`, cats.slice(0, 3).map(([k, v]) => `${v} ${k.toLowerCase()}`).join(', ')];
+      const fu = stops.filter(b => b.w > 1).length; if (fu) why.push(`${fu} follow-up${fu === 1 ? '' : 's'} included`);
+      if (h.visited >= 5) why.push(`your lead rate nearby: ${Math.round((h.leads / h.visited) * 100)}%`);
+      picked.push({ kind: 'business', id: cand.c.id, title: towns.length ? `Around ${towns.slice(0, 2).join(' & ')}` : `Near ${stops[0].biz}`, lat: cand.c.lat, lng: cand.c.lng, stops, len, rawScore: score, why });
+      if (picked.length >= 12) break;
+    }
+    picked.sort((a, b) => b.rawScore - a.rawScore);
+    const top = picked.slice(0, 5), best = top[0] ? top[0].rawScore : 1;
+    top.forEach(p => (p.score = Math.round((p.rawScore / best) * 100)));
+    return { list: top, considered: biz.length };
+  }
+  // Nearest-neighbour tour from the stop closest to the start, then 2-opt to remove crossings.
+  function tour(stops, from) {
+    const rest = stops.slice(), out = [];
+    let cur = from;
+    while (rest.length) {
+      let bi = 0, bd = Infinity;
+      rest.forEach((s, i) => { const d = km(cur, [s.lat, s.lng]); if (d < bd) { bd = d; bi = i; } });
+      const s = rest.splice(bi, 1)[0]; out.push(s); cur = [s.lat, s.lng];
+    }
+    const D = (a, b) => km([a.lat, a.lng], [b.lat, b.lng]);
+    for (let pass = 0, improved = true; improved && pass < 20; pass++) {
+      improved = false;
+      for (let i = 1; i < out.length - 2; i++) for (let k = i + 1; k < out.length - 1; k++) {
+        if (D(out[i - 1], out[k]) + D(out[i], out[k + 1]) < D(out[i - 1], out[i]) + D(out[k], out[k + 1]) - 1e-6) {
+          out.splice(i, k - i + 1, ...out.slice(i, k + 1).reverse()); improved = true;
+        }
+      }
+    }
+    return out;
+  }
+
+  async function runPlan(center) {
+    plan.center = center; plan.results = null; planBusy = 'Starting…'; renderPlan();
+    try {
+      const r = plan.mode === 'homes' ? await planHomes(center) : await planBusiness(center);
+      plan.results = { ...r, mode: plan.mode, at: Date.now() };
+      planBusy = ''; savePlan(); renderPlan(); drawPlan();
+      if (plan.mode === 'homes') nameAreas(plan.results.list);
+    } catch (e) {
+      planBusy = ''; plan.results = { list: [], error: e.message || 'Something went wrong. Try again.', mode: plan.mode }; renderPlan();
+    }
+  }
+  async function nameAreas(list) {
+    for (const r of list) {
+      try { const g = await reverse(r.lat, r.lng); if (g.area) { r.title = g.area; r.sub = g.address.split(',').slice(0, 2).join(',').trim(); savePlan(); renderPlan(); } } catch { break; }
+      await new Promise(res => setTimeout(res, 1100));
+    }
+  }
+
+  async function startPlanned(res) {
+    const center = plan.center || [res.lat, res.lng];
+    if (res.kind === 'business') {
+      walk = { start: { lat: res.stops[0].lat, lng: res.stops[0].lng, address: res.stops[0].biz, area: '', suffix: '' }, radius: 0, loading: false,
+        plan: { kind: 'business', title: res.title }, sections: [{ street: 'Driving route', cont: false, houses: res.stops.map(s => ({ id: s.id, lat: s.lat, lng: s.lng, num: '', street: '', biz: s.biz, cat: s.cat, addr: s.addr, placeId: s.placeId })) }] };
+      saveWalk(); listMode('walk'); renderWalk(); drawWalk();
+      toast(`${res.stops.length} stops ready`); return;
+    }
+    // Homes: houses inside the chosen block group, skipping doors that already said no or became leads.
+    const ext = res.rings.flat().reduce((m, [x, y]) => Math.max(m, km([res.lat, res.lng], [y, x])), 0.2);
+    walk = { start: { lat: res.lat, lng: res.lng, address: res.title, area: res.title, suffix: res.sub || '' }, radius: 0, loading: true, plan: { kind: 'homes', title: res.title }, sections: [] };
+    listMode('walk'); renderWalk();
+    try {
+      const data = await fetchHouses(res.lat, res.lng, Math.min(1500, Math.round(ext * 1000) + 50));
+      // Start at the house in this area closest to where you're planning from.
+      const inside = (data.elements || []).filter(e => e.type === 'node' || e.geometry).map(e => e.type === 'node' ? [e.lat, e.lon] : centroid(e.geometry)).filter(([la, ln]) => inPoly(ln, la, res.rings));
+      const first = inside.sort((a, b) => km(center, a) - km(center, b))[0] || [res.lat, res.lng];
+      walk.start.lat = first[0]; walk.start.lng = first[1];
+      walk.sections = buildRoute(data, walk.start, 1e9, {
+        poly: res.rings, limit: plan.size,
+        keep: p => !p || !(p.status === 'rejected' || p.status === 'lead' || (p.history?.length && p.status !== 'return' && p.status !== 'nocontact' && Date.now() - p.history.at(-1).t < 30 * 864e5)),
+      });
+      walk.loading = false;
+      toast(`${walkHouses().length} houses ready`);
+    } catch { walk.loading = false; walk.error = 'Could not load houses. Check your signal and try again.'; }
+    saveWalk(); renderWalk(); drawWalk();
+  }
+
+  // ----- Planner screen -----
+  function renderPlan() {
+    const el = $('planPanel');
+    const opt = (id, vals, cur, fmt) => `<select id="${id}">${vals.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${fmt(v)}</option>`).join('')}</select>`;
+    const homes = plan.mode === 'homes';
+    const form = `<div class="report">
+      <div class="seg small" role="tablist" aria-label="Plan for">
+        <button type="button" role="tab" data-mode="homes" aria-selected="${homes}">Homes</button>
+        <button type="button" role="tab" data-mode="business" aria-selected="${!homes}">Businesses</button>
+      </div>
+      <div class="list-tools">
+      ${homes ? `
+        <div class="row">
+          <label class="lt"><span class="label">Houses in route</span>${opt('pSize', [20, 30, 40, 60, 80, 100], plan.size, v => `${v} houses`)}</label>
+          <label class="lt"><span class="label">Search within</span>${opt('pKm', [2, 3, 5, 8, 12], plan.km, v => `${v} km`)}</label>
+        </div>
+        <div class="row">
+          <label class="lt"><span class="label">Household income</span>${opt('pInc', [0, 50000, 75000, 100000, 150000], plan.minIncome, v => v ? `${money(v)}+ median` : 'Any income')}</label>
+          <label class="lt"><span class="label">Homeowners</span>${opt('pOwn', [0, 0.5, 0.7, 0.85], plan.minOwner, v => v ? `${Math.round(v * 100)}%+ own` : 'Any')}</label>
+        </div>
+        <label class="lt check"><input type="checkbox" id="pFollow" ${plan.followUps ? 'checked' : ''}><span>Include my Return later and No contact doors</span></label>`
+      : `
+        <div class="row">
+          <label class="lt"><span class="label">Stops in route</span>${opt('pBizSize', [8, 10, 15, 20, 30], plan.bizSize, v => `${v} stops`)}</label>
+          <label class="lt"><span class="label">Search within</span>${opt('pBizKm', [5, 10, 15, 25, 40], plan.bizKm, v => `${v} km`)}</label>
+        </div>
+        <div class="cats">${BIZ_CATS.map(c => `<button type="button" class="chip" data-cat="${c.key}" aria-pressed="${plan.cats.includes(c.key)}">${c.label}</button>`).join('')}</div>
+        <label class="lt check"><input type="checkbox" id="pChains" ${plan.skipChains ? 'checked' : ''}><span>Skip chain stores (no local decision maker)</span></label>`}
+      </div>
+      <p>Searches around the middle of the map. Move the map or search a town first to plan somewhere else.</p>
+      <div class="report-actions">
+        <button class="btn primary" type="button" id="planGo" ${planBusy ? 'disabled' : ''}>${planBusy ? esc(planBusy) : 'Find the best 5 routes'}</button>
+        <button class="btn" type="button" id="planHere" ${planBusy ? 'disabled' : ''}>Use my location</button>
+      </div></div>`;
+    const R = plan.results && plan.results.mode === plan.mode ? plan.results : null;
+    let results = '';
+    if (R) {
+      if (R.error) results = `<div class="report"><p class="warn">${esc(R.error)}</p></div>`;
+      else if (!R.list.length) results = `<div class="report"><p>No routes matched. Loosen the income or homeowner filters, search a bigger distance, or pick more kinds of business.</p></div>`;
+      else results = `<p class="fine">${R.list.length} best of ${R.considered} ${R.mode === 'homes' ? 'neighborhoods' : 'businesses'} checked.</p>` + R.list.map((r, i) => `
+        <article class="plan-card">
+          <div class="plan-top"><span class="rank">${i + 1}</span><div class="plan-titles"><h3>${esc(r.title)}</h3>${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}</div><span class="score" title="Match score">${r.score}</span></div>
+          <ul class="why">${r.why.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
+          <div class="report-actions">
+            <button class="btn primary" type="button" data-start="${i}">Start this route</button>
+            <button class="btn" type="button" data-show="${i}">Show on map</button>
+          </div>
+        </article>`).join('');
+    }
+    const note = `<p class="fine">${homes
+      ? 'Income, homeownership and housing type come from the US Census American Community Survey for each neighborhood block, not for individual houses. Houses come from OpenStreetMap, and apartments are left out where they are mapped.'
+      : 'Businesses come from OpenStreetMap, so very new or unmapped businesses will be missing. Routes skip places you marked Rejected or Lead, and anything visited in the last two weeks unless it is a Return later.'}</p>`;
+    el.innerHTML = form + results + note;
+    el.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { plan.mode = b.dataset.mode; savePlan(); renderPlan(); drawPlan(); });
+    const bind = (id, key, num = true) => { const x = $(id); if (x) x.onchange = () => { plan[key] = num ? +x.value : x.value; savePlan(); }; };
+    bind('pSize', 'size'); bind('pKm', 'km'); bind('pInc', 'minIncome'); bind('pOwn', 'minOwner'); bind('pBizSize', 'bizSize'); bind('pBizKm', 'bizKm');
+    if ($('pFollow')) $('pFollow').onchange = e => { plan.followUps = e.target.checked; savePlan(); };
+    if ($('pChains')) $('pChains').onchange = e => { plan.skipChains = e.target.checked; savePlan(); };
+    el.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
+      const k = b.dataset.cat; plan.cats = plan.cats.includes(k) ? plan.cats.filter(x => x !== k) : [...plan.cats, k]; savePlan(); renderPlan();
+    });
+    $('planGo').onclick = () => { const c = map.getCenter(); runPlan([c.lat, c.lng]); };
+    $('planHere').onclick = () => {
+      if (!navigator.geolocation) return toast('Location is not available on this device.');
+      navigator.geolocation.getCurrentPosition(pos => runPlan([pos.coords.latitude, pos.coords.longitude]), () => toast('Allow location access, or move the map and use Find.'), { enableHighAccuracy: true, timeout: 12000 });
+    };
+    el.querySelectorAll('[data-start]').forEach(b => b.onclick = () => startPlanned(R.list[+b.dataset.start]));
+    el.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { drawPlan(+b.dataset.show); showTab('map'); });
+  }
+
+  const planLayer = L.layerGroup().addTo(map);
+  function drawPlan(only) {
+    planLayer.clearLayers();
+    const R = plan.results;
+    if (!R || !R.list || !R.list.length || $('planPanel').hidden && only == null) return;
+    const accent = cssVar('var(--accent)');
+    const bounds = [];
+    R.list.forEach((r, i) => {
+      if (only != null && only !== i) return;
+      if (r.kind === 'homes') {
+        const poly = L.polygon(r.rings.map(ring => ring.map(([x, y]) => [y, x])), { color: accent, weight: 2, fillOpacity: .12 }).addTo(planLayer);
+        poly.bindTooltip(`${i + 1}. ${esc(r.title)}`, { sticky: true });
+        bounds.push(...r.rings.flat().map(([x, y]) => [y, x]));
+      } else {
+        L.polyline(r.stops.map(s => [s.lat, s.lng]), { color: accent, weight: 3, opacity: .7 }).addTo(planLayer);
+        r.stops.forEach((s, k) => L.circleMarker([s.lat, s.lng], { radius: 6, weight: 2, color: accent, fillColor: '#fff', fillOpacity: 1 }).bindTooltip(`${k + 1}. ${esc(s.biz)}`).addTo(planLayer));
+        bounds.push(...r.stops.map(s => [s.lat, s.lng]));
+      }
+      L.marker([r.lat, r.lng], { icon: L.divIcon({ className: '', html: `<div class="rank-pin">${i + 1}</div>`, iconSize: [26, 26] }), interactive: false }).addTo(planLayer);
+    });
+    if (only != null && bounds.length) setTimeout(() => map.fitBounds(bounds, { padding: [30, 30], maxZoom: 17 }), 50);
+  }
+
+  planReady = true;
 
   // ---------- Tabs ----------
   function showTab(t) {
@@ -1322,7 +1761,7 @@ main { flex: 1; min-height: 0; position: relative; }
   });
 
   // ---------- Boot ----------
-  function refresh() { legend(); drawPins(); areaOptions(); renderTopCount(); renderList(); renderWalk(); drawWalk(); }
+  function refresh() { legend(); drawPins(); areaOptions(); renderTopCount(); renderList(); renderWalk(); drawWalk(); renderPlan(); }
   load(); listMode(mode); refresh(); backfillAreas();
   window.addEventListener('online', backfillAreas);
   let tab = 'map'; try { tab = localStorage.getItem('canvass-log.tab') || 'map'; } catch {}
