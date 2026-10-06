@@ -3,7 +3,7 @@ import http from 'node:http'; import fs from 'node:fs'; import path from 'node:p
 const APP = path.resolve(process.argv[2]);
 const srv = http.createServer((q, r) => { const f = path.join(APP, q.url.split('?')[0] === '/' ? 'index.html' : q.url.split('?')[0]); fs.readFile(f, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'Content-Type': f.endsWith('.html') ? 'text/html' : f.endsWith('.json') ? 'application/json' : 'application/octet-stream' }); r.end(d); } }); }).listen(8080);
 const browser = await chromium.launch();
-const spots = [['Boulder', 40.0178, -105.2836], ['Nampa', 43.5860, -116.5770]];
+const spots = [['Middleton', 43.7110, -116.6085], ['Middleton2', 43.7036, -116.6260], ['Boulder', 40.0178, -105.2836], ['Nampa', 43.5860, -116.5770]];
 for (const [name, lat, lng] of spots) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
   await ctx.addInitScript(([lat, lng]) => { if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', 1); localStorage.setItem('canvass-log.view', JSON.stringify({ lat, lng, z: 18 })); localStorage.setItem('canvass-log.tab', 'map'); } }, [lat, lng]);
