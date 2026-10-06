@@ -9,6 +9,7 @@ for (const [name, lat, lng] of spots) {
   await ctx.addInitScript(([lat, lng]) => { if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', 1); localStorage.setItem('canvass-log.view', JSON.stringify({ lat, lng, z: 18 })); localStorage.setItem('canvass-log.tab', 'map'); } }, [lat, lng]);
   const page = await ctx.newPage();
   const errs = []; page.on('pageerror', e => errs.push(e.message));
+  const got = []; page.on('response', async r => { if (/overpass|kumi|private\.coffee|interpreter/.test(r.url())) { try { const j = await r.json(); if (j && j.elements) got.push(...j.elements); } catch {} } });
   await page.goto('http://localhost:8080/'); await page.waitForTimeout(2500);
   const box = await page.locator('#map').boundingBox();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); await page.waitForTimeout(3000);
@@ -21,8 +22,9 @@ for (const [name, lat, lng] of spots) {
   const hs = w.sections.flatMap(s => s.houses);
   let la0 = Math.min(...pts.map(p => p[0])), la1 = Math.max(...pts.map(p => p[0])), ln0 = Math.min(...pts.map(p => p[1])), ln1 = Math.max(...pts.map(p => p[1]));
   const q = `[out:json][timeout:60];way[highway](${la0 - .001},${ln0 - .001},${la1 + .001},${ln1 + .001});out geom;`;
-  let ways = [];
-  for (let t = 0; t < 3 && !ways.length; t++) { try { const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q) }); ways = (await r.json()).elements; } catch (e) { await new Promise(r => setTimeout(r, 5000)); } }
+  // Check against the very map data the app downloaded (geometry of every way it was given).
+  const nodes = new Map(got.filter(e => e.type === 'node').map(e => [e.id, e]));
+  const ways = got.filter(e => e.type === 'way' && e.tags && e.tags.highway).map(e => ({ tags: e.tags, geometry: e.geometry || (e.nodes || []).map(id => nodes.get(id)).filter(Boolean) }));
   const kx = Math.cos(lat * Math.PI / 180) * 111320, ky = 110540, xy = ([a, b]) => [(b - lng) * kx, (a - lat) * ky];
   const good = [], bad = [];
   for (const wy of ways) { const t = wy.tags || {}; const isBad = /^(driveway|parking_aisle|drive-through)$/.test(t.service || '') || /^(private|no)$/.test(t.access || '') || /^(no|private)$/.test(t.foot || ''); for (let i = 1; i < (wy.geometry || []).length; i++) (isBad ? bad : good).push([xy([wy.geometry[i - 1].lat, wy.geometry[i - 1].lon]), xy([wy.geometry[i].lat, wy.geometry[i].lon])]); }
