@@ -271,6 +271,23 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
 .ev-pin { width: 28px; height: 28px; border-radius: 8px; background: var(--c); color: #fff; display: grid; place-items: center; font: 700 13px var(--font-label); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 .ev-pin.focus { transform: scale(1.3); }
 
+/* Updates */
+.icon-btn.bell { position: relative; }
+.icon-btn .badge { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 5px; background: #f07a45; color: #1a0d06; font: 700 12px/20px var(--font-body); text-align: center; }
+.rv { display: inline-flex; align-items: center; gap: 4px; color: #c2410c; font-weight: 700; font-size: 13px; }
+.rv::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #f07a45; }
+.erow.review { border-color: #f07a45; box-shadow: 0 0 0 1px #f07a45 inset; }
+.kv dd.chg, p.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-radius: 6px; padding: 0 6px; margin-left: -6px; }
+.was { display: block; font-size: 13px; color: var(--muted); text-decoration: line-through; }
+.review-box { border: 1px solid #f07a45; background: color-mix(in srgb, #f07a45 8%, var(--card)); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.review-box ul { margin: 0; padding-left: 18px; font-size: 14px; display: flex; flex-direction: column; gap: 3px; }
+.review-box .btn { height: 40px; }
+.inbox-item { border-top: 1px solid var(--line); padding: 10px 0; display: flex; flex-direction: column; gap: 6px; }
+.inbox-item b { overflow-wrap: anywhere; }
+.inbox-item ul { margin: 0; padding-left: 18px; font-size: 14px; }
+.inbox-item .row-btns { display: flex; gap: 8px; }
+.inbox-item .row-btns .btn { flex: 1; height: 40px; font-size: 14px; }
+
 /* Tab bar */
 .tabs {
   display: flex; background: var(--card); border-top: 1px solid var(--line);
@@ -349,6 +366,10 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   <div class="topbar-row">
     <h1 class="brand">Canvass<span>Log</span></h1>
     <span class="today" id="todayCount"></span>
+    <button class="icon-btn bell" id="inboxBtn" aria-label="Updates to review">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span class="badge" id="inboxCount" hidden></span>
+    </button>
     <button class="icon-btn" id="menuBtn" aria-label="Main menu">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
     </button>
@@ -610,6 +631,20 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     <button class="btn danger" id="evDelete" type="button" hidden>Delete</button>
     <button class="btn primary" type="submit" form="evForm">Save event</button>
   </div>
+</section>
+
+<section class="sheet" id="inboxSheet" role="dialog" aria-modal="true" aria-labelledby="inboxTitle" hidden>
+  <div class="sheet-head">
+    <div class="titles">
+      <div class="grab"></div>
+      <h2 id="inboxTitle">Updates</h2>
+      <div class="sub">Changes you didn't make, and emails waiting for you to send.</div>
+    </div>
+    <button class="close" data-close aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body" id="inboxBody"></div>
 </section>
 
 <section class="sheet" id="vendorSheet" role="dialog" aria-modal="true" aria-labelledby="vendorTitle" hidden>
@@ -2551,9 +2586,35 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   const evf = Object.assign({ from: 'me', radius: '50', status: 'all', rate: 'all', past: false, sort: 'rating', place: null }, readJSON(EVF_KEY, {}));
   const saveEvf = () => writeJSON(EVF_KEY, evf);
   let myLoc = null, evOnMap = false, evFocus = null, evOpen = null, feedNote = '';
-  const allEvents = () => [...(feed && Array.isArray(feed.events) ? feed.events : []), ...myEvents].filter(e => e && e.id && e.name);
+  const allEvents = () => [...(feed && Array.isArray(feed.events) ? feed.events : []), ...myEvents].filter(e => e && e.id && e.name)
+    .map(e => { const ed = evState[e.id] && evState[e.id].edits; return ed ? Object.assign({}, e, ed) : e; });
   const stOf = id => evState[id] || (evState[id] = {});
   const saveState = () => writeJSON(EVS_KEY, evState);
+  // Anything that changes an event without you (the weekly search, an organizer's reply) is logged
+  // per field until you mark it reviewed.
+  const TRACK = { name: 'Name', type: 'Kind', start: 'First day', end: 'Last day', hours: 'Hours', setup: 'Setup', venue: 'Venue', address: 'Address', fee: 'Booth price', booth: 'Booth size', deadline: 'Apply by', attendance: 'Crowd', rules: 'Rules', leads: 'Lead collection', organizer: 'Organizer', contactName: 'Contact', email: 'Email', phone: 'Phone', website: 'Website', applyUrl: 'Application link', description: 'About' };
+  const SEEN_KEY = 'canvass-log.eventseen';
+  let seen = readJSON(SEEN_KEY, {});
+  const showVal = (k, v) => v == null || v === '' ? 'not listed' : k === 'fee' ? usd(v) : k === 'leads' ? (v === 'yes' ? 'allowed' : v === 'no' ? 'not allowed' : 'not sure') : k === 'type' ? evType(v).label : /^(start|end|deadline)$/.test(k) && dayOf(v) && !isNaN(dayOf(v)) ? dayOf(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : k === 'attendance' && isFinite(v) ? (+v).toLocaleString() : String(v);
+  function logChange(id, k, old, val, by) {
+    const st = stOf(id); st.changes = st.changes || {};
+    const prev = st.changes[k];
+    st.changes[k] = { old: prev ? prev.old : old ?? null, val: val ?? null, by, at: Date.now() };
+    if (String(st.changes[k].old ?? '') === String(val ?? '')) delete st.changes[k];
+  }
+  const pendingOf = st => !!(st && (st.isNew || (st.changes && Object.keys(st.changes).length)));
+  function markReviewed(id) { const st = stOf(id); delete st.isNew; delete st.changes; saveState(); }
+  function diffFeed(events) {
+    for (const e of events) {
+      if (!e || !e.id) continue;
+      const prev = seen[e.id], snap = {};
+      for (const k of Object.keys(TRACK)) snap[k] = e[k] ?? null;
+      if (!prev) { if (!isPast(e)) stOf(e.id).isNew = { by: 'weekly event search', at: Date.now() }; }
+      else for (const k of Object.keys(TRACK)) if (String(prev[k] ?? '') !== String(snap[k] ?? '')) logChange(e.id, k, prev[k], snap[k], 'weekly event search');
+      seen[e.id] = snap;
+    }
+    writeJSON(SEEN_KEY, seen); saveState();
+  }
   const usd = n => n == null || n === '' || !isFinite(n) ? '' : +n === 0 ? 'Free' : '$' + (+n).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const num = v => v == null || v === '' || !isFinite(+v) ? null : +v;
   const dayOf = d => d ? new Date(d + (String(d).length <= 10 ? 'T12:00' : '')) : null;
@@ -2634,7 +2695,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       if (r.status === 404) { feedNote = 'none'; return; }
       if (!r.ok) throw 0;
       const j = await r.json();
-      if (j && Array.isArray(j.events)) { feed = j; writeJSON(FEED_KEY, j); feedNote = ''; }
+      if (j && Array.isArray(j.events)) { feed = j; writeJSON(FEED_KEY, j); feedNote = ''; diffFeed(j.events); renderInbox(); }
     } catch { feedNote = 'offline'; }
   }
 
@@ -2660,14 +2721,15 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     $('evSource').textContent = (feed && feed.updated ? `Event list checked ${fmtDate(feed.updated)}${feed.area ? ` for ${feed.area}` : ''}. ` : feedNote === 'offline' ? 'Could not reach the event list; showing what is saved on this phone. ' : 'No weekly event list yet; add events you find and they are rated here. ')
       + `Distances from ${fromTxt}. Showing ${list.length} of ${n}.`;
     $('evRows').innerHTML = list.length ? list.map(({ e, r, mi, st }) => `
-      <li><button type="button" class="erow ${isPast(e) ? 'past' : ''}" data-id="${esc(e.id)}">
+      <li><button type="button" class="erow ${isPast(e) ? 'past' : ''} ${pendingOf(st) ? 'review' : ''}" data-id="${esc(e.id)}">
         <span class="addr">${esc(e.name)}</span>
         <span class="band" style="--c:${r.band.color}">${r.band.label}</span>
         <span class="meta">${esc(fmtWhen(e))}${mi != null ? ` · ${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi` : ''}${e.fee != null && e.fee !== '' ? ` · booth ${esc(usd(e.fee))}` : ''}${e.city ? ` · ${esc(e.city)}` : ''}</span>
-        <span class="meta"><span class="bk ${st.status || ''}">${BOOK[st.status || '']}</span>${st.booth ? ` · booth #${esc(st.booth)}` : ''}${st.requested && st.status !== 'reserved' ? ` · requested ${fmtDate(st.requested)}` : ''}</span>
+        <span class="meta">${pendingOf(st) ? `<span class="rv">${st.isNew ? 'New, review' : 'Changed, review'}</span> · ` : ''}<span class="bk ${st.status || ''}">${BOOK[st.status || '']}</span>${st.booth ? ` · booth #${esc(st.booth)}` : ''}${st.requested && st.status !== 'reserved' ? ` · requested ${fmtDate(st.requested)}` : ''}</span>
         ${st.notes ? `<span class="note">${esc(st.notes)}</span>` : ''}
       </button></li>`).join('') : `<li class="empty"><strong>No events match</strong>${n ? 'Try a wider distance or a different filter.' : 'Tap “Add an event” to add one you have found.'}</li>`;
     if (evOnMap) drawEvents();
+    renderInbox();
     censusFor(list.slice(0, 20).map(x => x.e));
   }
   $('evSort').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; evf.sort = b.dataset.k; saveEvf(); renderEvents(); });
@@ -2696,10 +2758,18 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     const r = rateEvent(e), st = stOf(e.id), mi = miles(e), t = evType(e.type);
     $('evTitle').textContent = e.name;
     $('evSub').innerHTML = `${esc(fmtWhen(e))}${mi != null ? ` · ${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi away` : ''} · <span class="band" style="--c:${r.band.color}">${r.band.label}</span>`;
-    const kv = rows => `<dl class="kv">${rows.filter(x => x[1]).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+    const chg = st.changes || {};
+    const was = f => f && chg[f] ? `<span class="was">was ${esc(showVal(f, chg[f].old))}</span>` : '';
+    const kv = rows => `<dl class="kv">${rows.filter(x => x[1] || (x[2] && chg[x[2]])).map(([k, v, f]) => `<dt>${k}</dt><dd class="${f && chg[f] ? 'chg' : ''}">${v || 'removed'}${was(f)}</dd>`).join('')}</dl>`;
+    const miss = missingInfo(e);
     const web = safeUrl(e.website), apply = safeUrl(e.applyUrl), source = safeUrl(e.source);
     const days = evDays(e);
     $('evBody').innerHTML = `
+      ${pendingOf(st) ? `<div class="review-box">
+        <b>${st.isNew ? `New from the ${esc(st.isNew.by)}` : 'Changed since you last looked'}</b>
+        ${Object.keys(chg).length ? `<ul>${Object.entries(chg).map(([k, c]) => `<li>${esc(TRACK[k] || k)}: ${esc(showVal(k, c.old))} → <b>${esc(showVal(k, c.val))}</b> <small>(${esc(c.by)}, ${fmtDate(c.at)})</small></li>`).join('')}</ul>` : ''}
+        <button class="btn" type="button" id="evReviewed">Mark reviewed</button>
+      </div>` : ''}
       <div class="ev-sec">
         <h3>Your booking</h3>
         <div class="statuses three" id="evBook" role="group" aria-label="Booking status">
@@ -2719,19 +2789,28 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       </div>
       <div class="ev-sec">
         <h3>When and where</h3>
-        ${kv([['When', esc(fmtWhen(e)) + (days > 1 ? ` (${days} days)` : '')], ['Hours', esc(e.hours)], ['Setup', esc(e.setup)], ['Repeats', esc(e.repeats)], ['Where', esc([e.venue, e.address].filter(Boolean).join(', '))], ['Kind', esc(t.label)]])}
+        ${kv([['When', esc(fmtWhen(e)) + (days > 1 ? ` (${days} days)` : ''), chg.start ? 'start' : 'end'], ['Hours', esc(e.hours), 'hours'], ['Setup', esc(e.setup), 'setup'], ['Repeats', esc(e.repeats)], ['Where', esc([e.venue, e.address].filter(Boolean).join(', ')), chg.venue ? 'venue' : 'address'], ['Kind', esc(t.label), 'type']])}
       </div>
       <div class="ev-sec">
         <h3>Booth or table</h3>
-        ${kv([['Price', esc(usd(e.fee) || 'Not listed')], ['Size', esc(e.booth)], ['Apply by', e.deadline ? esc(dayOf(e.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })) : ''], ['Crowd', num(e.attendance) != null ? `About ${num(e.attendance).toLocaleString()}${days > 1 ? ' a day' : ''}${e.attendanceSource ? ` <small>(${esc(e.attendanceSource)})</small>` : ''}` : ''], ['Who comes', esc(e.audience)]])}
-        ${e.rules ? `<p><b>Rules:</b> ${esc(e.rules)}</p>` : ''}
+        ${kv([['Price', esc(usd(e.fee) || 'Not listed'), 'fee'], ['Size', esc(e.booth), 'booth'], ['Apply by', e.deadline ? esc(dayOf(e.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })) : '', 'deadline'], ['Crowd', num(e.attendance) != null ? `About ${num(e.attendance).toLocaleString()}${days > 1 ? ' a day' : ''}${e.attendanceSource ? ` <small>(${esc(e.attendanceSource)})</small>` : ''}` : '', 'attendance'], ['Leads', e.leads ? esc(showVal('leads', e.leads)) : '', 'leads'], ['Who comes', esc(e.audience)]])}
+        ${e.rules || chg.rules ? `<p class="${chg.rules ? 'chg' : ''}"><b>Rules:</b> ${esc(e.rules || 'removed')}${was('rules')}</p>` : ''}
+        ${miss.length ? `<p class="fine">Missing: ${esc(miss.map(m => m.short).join(', '))}.</p>${e.email ? `<button class="btn" type="button" id="evAsk">Email organizer for missing details</button>` : ''}` : ''}
+        ${st.infoAsked ? `<p class="fine">Details request prepared ${fmtDate(st.infoAsked)}.</p>` : ''}
       </div>
       <div class="ev-sec">
         <h3>Contact and booking</h3>
-        ${kv([['Organizer', esc(e.organizer)], ['Contact', esc(e.contactName)], ['Email', e.email ? aLink('mailto:' + e.email, e.email) : ''], ['Phone', e.phone ? `<a href="tel:${esc(String(e.phone).replace(/[^\d+]/g, ''))}">${esc(e.phone)}</a>` : ''], ['Website', web ? aLink(web, web.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)) : ''], ['Apply', apply ? aLink(apply, 'Vendor application') : '']])}
+        ${kv([['Organizer', esc(e.organizer), 'organizer'], ['Contact', esc(e.contactName), 'contactName'], ['Email', e.email ? aLink('mailto:' + e.email, e.email) : '', 'email'], ['Phone', e.phone ? `<a href="tel:${esc(String(e.phone).replace(/[^\d+]/g, ''))}">${esc(e.phone)}</a>` : '', 'phone'], ['Website', web ? aLink(web, web.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)) : '', 'website'], ['Apply', apply ? aLink(apply, 'Vendor application') : '', 'applyUrl']])}
         ${!e.email && !e.phone && !web && !apply ? '<p class="fine">No contact details yet.</p>' : ''}
       </div>
       ${e.description ? `<div class="ev-sec"><h3>About</h3><p>${esc(e.description)}</p></div>` : ''}
+      <div class="ev-sec">
+        <h3>Organizer's reply</h3>
+        <p class="fine">Paste their email reply here. The app picks out the booth price, size, deadline, crowd, setup time and rules, updates this event, and highlights what changed for you to review.</p>
+        <div class="field"><textarea id="evReply" placeholder="Paste the organizer's reply"></textarea></div>
+        <button class="btn" type="button" id="evReplyGo">Update from reply</button>
+        ${(st.replies || []).length ? `<details><summary class="fine">${st.replies.length} saved repl${st.replies.length === 1 ? 'y' : 'ies'}</summary>${st.replies.map(x => `<p class="fine"><b>${fmtDate(x.at)}:</b> ${esc(x.text).slice(0, 1500)}</p>`).join('')}</details>` : ''}
+      </div>
       <p class="fine">${source ? `Found on ${aLink(source, source.replace(/^https?:\/\/(www\.)?/, '').split('/')[0])}${e.checked ? `, checked ${fmtDate(dayOf(e.checked))}` : ''}. Confirm dates and prices with the organizer.` : e.mine ? 'You added this event.' : ''}</p>
       ${e.mine ? '<button class="btn" type="button" id="evEdit">Edit event details</button>' : ''}`;
     $('evRequest').textContent = st.status === 'reserved' ? 'Contact organizer' : 'Request a booth';
@@ -2748,6 +2827,14 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     const b = ev.target.closest('#evBook button');
     if (b) { const st = stOf(evOpen); st.status = b.dataset.k; st.updated = Date.now(); evSave(); fillEvent(allEvents().find(x => x.id === evOpen)); return; }
     if (ev.target.closest('#evEdit')) editEvent(evOpen);
+    if (ev.target.closest('#evReviewed')) { markReviewed(evOpen); evSave(); renderInbox(); fillEvent(allEvents().find(x => x.id === evOpen)); }
+    if (ev.target.closest('#evAsk')) askDetails(evOpen);
+    if (ev.target.closest('#evReplyGo')) {
+      const text = $('evReply').value.trim(); if (!text) return toast('Paste the reply first.');
+      const n = applyReply(evOpen, text);
+      toast(n ? `Updated ${n} detail${n === 1 ? '' : 's'} from the reply. Highlighted for review.` : 'Saved the reply. No prices, sizes or dates found in it; check it yourself.');
+      evSave(); renderInbox(); fillEvent(allEvents().find(x => x.id === evOpen));
+    }
   });
   $('evBody').addEventListener('input', ev => {
     const k = { evBoothNo: 'booth', evPaid: 'paid', evNotes: 'notes' }[ev.target.id]; if (!k || !evOpen) return;
@@ -2777,6 +2864,118 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         .on('click', () => openEvent(e.id)).addTo(evLayer);
     }
   }
+
+  // What a vendor needs to know before booking, and an email asking the organizer for whatever is missing.
+  function missingInfo(e) {
+    const m = [];
+    if (e.fee == null || e.fee === '') m.push({ short: 'booth price', ask: 'the booth or table fee' });
+    if (!e.booth) m.push({ short: 'booth size', ask: 'the booth size and what is included (table, chairs, tent, power)' });
+    if (!e.deadline && !isPast(e)) m.push({ short: 'deadline', ask: 'the deadline to apply or reserve' });
+    if (num(e.attendance) == null) m.push({ short: 'crowd size', ask: 'how many people usually attend' });
+    if (!e.setup) m.push({ short: 'setup time', ask: 'setup and tear-down times' });
+    if (!e.leads) m.push({ short: 'lead rules', ask: 'whether a home-services business may talk with visitors and collect contact details for follow-up' });
+    if (!e.rules) m.push({ short: 'vendor rules', ask: 'any vendor rules or paperwork (insurance, permits)' });
+    return m;
+  }
+  const needsAsk = e => !!e.email && !isPast(e) && (e.fee == null || e.fee === '' || missingInfo(e).length >= 3);
+  function detailsText(e) {
+    const v = vendor, miss = missingInfo(e);
+    const body = [
+      `Hi${e.contactName ? ' ' + e.contactName.split(' ')[0] : ''},`, '',
+      `I'm interested in a vendor booth at ${e.name} (${fmtWhen(e)}).${v.biz ? ` I'm with ${v.biz}${v.what ? `; we offer ${v.what}` : ''}.` : ''} Before I apply, could you send:`,
+      ...miss.map(m => `- ${m.ask}`), '',
+      'Thank you,', v.name || '', v.biz || '', v.phone || '', v.email || '',
+    ].filter((x, i, a) => x !== '' || a[i - 1] !== '').join('\n').trim();
+    return { subject: `Vendor booth details: ${e.name}, ${fmtWhen(e)}`, body };
+  }
+  function askDetails(id) {
+    const e = allEvents().find(x => x.id === id); if (!e || !e.email) return;
+    if (!vendor.name && !vendor.biz) { toast('Add your details first, then tap again.'); return openVendor(); }
+    const { subject, body } = detailsText(e), st = stOf(id);
+    st.infoAsked = Date.now(); evSave(); renderInbox();
+    location.href = `mailto:${encodeURIComponent(e.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+  // Reading a pasted reply: pull out the details vendors need. Anything found replaces the listing's
+  // value and is logged as a change for you to review.
+  function parseReply(text) {
+    const t = text.replace(/\r/g, ''), out = {};
+    const MONTHS = 'jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec';
+    if (/\b(no (booth |vendor )?fee|free of charge|no charge|booths? (are|is) free)\b/i.test(t)) out.fee = 0;
+    else {
+      const m = t.match(/(?:fee|cost|price|booth|space|table|spot|rate)[^$\n]{0,60}\$\s?([\d,]+(?:\.\d{2})?)/i) || t.match(/\$\s?([\d,]+(?:\.\d{2})?)[^\n]{0,40}(?:fee|booth|space|table|spot|per day|for the)/i) || t.match(/\$\s?([\d,]+(?:\.\d{2})?)/);
+      if (m) out.fee = +m[1].replace(/,/g, '');
+    }
+    const sz = t.match(/\b(\d{1,2})\s?(?:'|’|ft|feet)?\s?(?:x|×|by)\s?(\d{1,2})\b\s?(?:'|’|ft|feet)?/i);
+    if (sz) {
+      const inc = [];
+      if (/\btables?\b/i.test(t)) inc.push(/(bring|provide) (your|a|their) own[^.\n]{0,20}\btables?\b/i.test(t) ? 'bring your own table' : 'table included');
+      if (/\btent\b/i.test(t)) inc.push(/(bring|provide) (your|a|their) own[^.\n]{0,20}\btent\b/i.test(t) ? 'bring your own tent' : 'tent included');
+      if (/electric|power|outlet/i.test(t)) inc.push(/no (electric|power)/i.test(t) ? 'no power' : 'power available');
+      out.booth = `${sz[1]}x${sz[2]}${inc.length ? ', ' + inc.join(', ') : ''}`;
+    }
+    const dl = t.match(new RegExp(`(?:deadline|due|apply by|register by|registration closes|sign up by|reserve by)[^\\n]{0,20}?((?:${MONTHS})[a-z]*\\.? \\d{1,2}(?:st|nd|rd|th)?(?:,? \\d{4})?|\\d{1,2}/\\d{1,2}(?:/\\d{2,4})?)`, 'i'));
+    if (dl) { const d = toISODate(dl[1]); if (d) out.deadline = d; }
+    const at = t.match(/(?:attendance|expect(?:ing|ed)?|draws?|crowd of|about|around|over)\s(?:of\s)?(?:about\s|around\s|roughly\s|over\s)?([\d,]{3,7})\+?\s*(?:people|attendees|visitors|guests|shoppers)?/i) || t.match(/([\d,]{3,7})\+?\s*(?:people|attendees|visitors|guests|shoppers)/i);
+    if (at) { const n = +at[1].replace(/,/g, ''); if (n >= 50 && n < 2e6) out.attendance = n; }
+    const su = t.match(/set[- ]?up[^\n.]{0,30}?(\d{1,2}(?::\d{2})?\s?(?:am|pm|a\.m\.|p\.m\.))/i);
+    if (su) out.setup = `from ${su[1].replace(/\./g, '')}`;
+    if (/\bno (solicit\w*|sales of services|selling services|lead (collection|generation))|not allow\w* (to )?(solicit|sell services|collect)/i.test(t)) out.leads = 'no';
+    else if (/(service (businesses|vendors|providers)|home services?|lead collection|collect(ing)? (contact|leads|info))[^.\n]{0,40}\b(welcome|allowed|fine|ok(ay)?|permitted)\b|\b(welcome|allowed|fine|permitted)\b[^.\n]{0,30}(service (businesses|vendors)|collect(ing)? (contact|leads))/i.test(t)) out.leads = 'yes';
+    const rules = t.split(/[.!?]\s+|\n+/).map(x => x.trim()).filter(x => /insurance|permit|certificate|must|required|not allowed|no (amplified|music|flyers|solicit)|tax id|license/i.test(x) && x.length < 220);
+    if (rules.length) out.rules = rules.slice(0, 4).join(' ');
+    return out;
+  }
+  function toISODate(s) {
+    const y = new Date().getFullYear();
+    let d = /\//.test(s) ? (([m, dd, yy]) => new Date(yy ? (+yy < 100 ? 2000 + +yy : +yy) : y, m - 1, dd))(s.split('/')) : new Date(`${s.replace(/(st|nd|rd|th)\b/i, '').replace('.', '')}${/\d{4}/.test(s) ? '' : ' ' + y}`);
+    if (isNaN(d)) return null;
+    if (d < Date.now() - 60 * 864e5 && !/\d{4}/.test(s)) d.setFullYear(d.getFullYear() + 1);
+    return dayKey(d);
+  }
+  function applyReply(id, text) {
+    const e = allEvents().find(x => x.id === id); if (!e) return 0;
+    const st = stOf(id), found = parseReply(text);
+    st.replies = [...(st.replies || []), { at: Date.now(), text: text.slice(0, 5000) }];
+    st.edits = st.edits || {};
+    let n = 0;
+    for (const [k, v] of Object.entries(found)) {
+      if (String(e[k] ?? '') === String(v)) continue;
+      logChange(id, k, e[k], v, "organizer's reply"); st.edits[k] = v; n++;
+    }
+    delete st.census;
+    return n;
+  }
+
+  // Updates inbox: every event with changes to review, and details emails ready for you to send.
+  function inboxItems() {
+    const evs = allEvents();
+    const review = evs.filter(e => pendingOf(evState[e.id]));
+    const asks = evs.filter(e => needsAsk(e) && !(evState[e.id] || {}).infoAsked);
+    return { review, asks };
+  }
+  function renderInbox() {
+    const { review, asks } = inboxItems(), n = review.length + asks.length;
+    $('inboxCount').hidden = !n; $('inboxCount').textContent = n > 99 ? '99+' : n;
+    $('inboxBtn').setAttribute('aria-label', n ? `${n} update${n === 1 ? '' : 's'} to review` : 'Updates');
+    if (openSheetId !== 'inboxSheet') return;
+    $('inboxBody').innerHTML = (review.length ? `<div class="ev-sec"><h3>To review (${review.length})</h3>${review.map(e => {
+      const st = evState[e.id], ch = st.changes || {};
+      return `<div class="inbox-item"><b>${esc(e.name)}</b><span class="fine">${st.isNew ? `New from the ${esc(st.isNew.by)}` : ''}</span>
+        ${Object.keys(ch).length ? `<ul>${Object.entries(ch).map(([k, c]) => `<li>${esc(TRACK[k] || k)}: ${esc(showVal(k, c.old))} → <b>${esc(showVal(k, c.val))}</b> <small>(${esc(c.by)})</small></li>`).join('')}</ul>` : ''}
+        <div class="row-btns"><button class="btn" type="button" data-open="${esc(e.id)}">Open</button><button class="btn" type="button" data-ok="${esc(e.id)}">Mark reviewed</button></div></div>`;
+    }).join('')}${review.length > 1 ? '<button class="btn" type="button" id="inboxAllOk">Mark all reviewed</button>' : ''}</div>` : '')
+      + (asks.length ? `<div class="ev-sec"><h3>Emails ready to send (${asks.length})</h3><p class="fine">These events are missing booth details. Each opens a drafted email asking the organizer; nothing is sent until you tap Send.</p>${asks.map(e => `<div class="inbox-item"><b>${esc(e.name)}</b><span class="fine">Missing: ${esc(missingInfo(e).map(m => m.short).join(', '))}</span>
+        <div class="row-btns"><button class="btn" type="button" data-open="${esc(e.id)}">Open</button><button class="btn primary" type="button" data-ask="${esc(e.id)}">Review and send</button></div></div>`).join('')}</div>` : '')
+      || '<div class="empty"><strong>All caught up</strong>Nothing to review.</div>';
+  }
+  $('inboxBtn').addEventListener('click', () => { if (openSheetId) closeSheet(); showSheet('inboxSheet'); renderInbox(); });
+  $('inboxBody').addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if (!b) return;
+    if (b.dataset.open) { closeSheet(); if ($('eventsView').hidden) showTab('events'); openEvent(b.dataset.open); }
+    else if (b.dataset.ok) { markReviewed(b.dataset.ok); renderInbox(); if (!$('eventsView').hidden) renderEvents(); }
+    else if (b.dataset.ask) { askDetails(b.dataset.ask); renderInbox(); }
+    else if (b.id === 'inboxAllOk') { inboxItems().review.forEach(e => markReviewed(e.id)); renderInbox(); if (!$('eventsView').hidden) renderEvents(); }
+  });
 
   // Booth request: a ready-to-send email, or the organizer's application with your details copied.
   function requestText(e) {
@@ -2916,7 +3115,8 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
 
   // ---------- Boot ----------
   function refresh() { legend(); drawPins(); areaOptions(); renderTopCount(); renderList(); renderWalk(); drawWalk(); renderPlan(); }
-  load(); listMode(mode); refresh(); backfillAreas();
+  load(); listMode(mode); refresh(); backfillAreas(); renderInbox();
+  loadFeed().then(() => { renderInbox(); if (tabNow === 'events') renderEvents(); });
   window.addEventListener('online', backfillAreas);
   let tab = 'map'; try { tab = localStorage.getItem('canvass-log.tab') || 'map'; } catch {}
   showTab(tab);
