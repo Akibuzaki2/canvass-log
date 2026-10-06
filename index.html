@@ -184,7 +184,30 @@ main { flex: 1; min-height: 0; position: relative; }
 .areas .dotn { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 4px; vertical-align: 1px; }
 .areas-wrap { overflow-x: auto; }
 .report-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.report-actions .btn { height: 40px; font-size: 14px; flex: 1; min-width: 120px; }
+.report-actions .btn { height: auto; min-height: 40px; padding: 8px 12px; font-size: 14px; flex: 1; min-width: 120px; }
+#walkNext { flex-basis: 100%; font-size: 16px; }
+.report p { margin: 0; font-size: 15px; color: var(--muted); max-width: 60ch; }
+.report p.warn { color: var(--st-rejected); }
+.btn:disabled { opacity: .5; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; }
+.seg button { border: 0; background: none; border-radius: 9px; padding: 9px 0; font: 600 15px var(--font-body); color: var(--muted); }
+.seg button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+.panel { display: flex; flex-direction: column; gap: 12px; }
+.panel > * { flex: none; }
+.lt.check { flex-direction: row; align-items: center; gap: 8px; padding-top: 18px; font-size: 14px; }
+.lt.check input { width: 22px; height: 22px; accent-color: var(--accent); }
+.rows li.street { display: flex; justify-content: space-between; padding: 10px 2px 0; font: 700 14px var(--font-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.rows .wrow { grid-template-columns: 26px 1fr auto; }
+.wrow .ord { font: 700 15px/1.4 var(--font-label); color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.wrow .meta .dot { display: inline-block; width: 10px; height: 10px; margin: 0 6px 0 0; vertical-align: -1px; }
+.wrow.next { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.wrow.done .addr { color: var(--muted); }
+.walkbar {
+  position: absolute; left: 12px; right: 76px; bottom: 16px; z-index: 500; display: flex; align-items: center; gap: 8px;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; box-shadow: var(--shadow);
+}
+.walkbar .wb-text { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.walkbar .btn { height: 38px; padding: 0 12px; font-size: 14px; flex: none; }
 
 /* Tab bar */
 .tabs {
@@ -248,7 +271,7 @@ main { flex: 1; min-height: 0; position: relative; }
 .btn.danger { color: var(--st-rejected); }
 .btn.danger.confirm { background: var(--st-rejected); color: #fff; border-color: transparent; }
 .toast {
-  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 128px);
   background: #1d2a3a; color: #fff; padding: 10px 16px; border-radius: 12px; z-index: 3000; box-shadow: var(--shadow);
   font-weight: 500; max-width: calc(100% - 32px);
 }
@@ -282,6 +305,7 @@ main { flex: 1; min-height: 0; position: relative; }
     <div id="map"></div>
     <div class="legend" id="legend"></div>
     <div class="hint" id="hint">Tap any house on the map to log a visit.</div>
+    <div class="walkbar" id="walkbar" hidden></div>
     <div class="fab-col">
       <button class="fab" id="locateBtn" aria-label="Go to my location">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
@@ -289,6 +313,12 @@ main { flex: 1; min-height: 0; position: relative; }
     </div>
   </section>
   <section class="view" id="listView" aria-label="List" hidden>
+    <div class="seg" role="tablist" aria-label="List mode">
+      <button type="button" role="tab" id="segWalk" aria-selected="false">Walk route</button>
+      <button type="button" role="tab" id="segLog" aria-selected="true">Visit log</button>
+    </div>
+    <div class="panel" id="walkPanel" hidden></div>
+    <div class="panel" id="logPanel">
     <div class="list-tools">
       <div class="row">
         <label class="lt"><span class="label">Date</span>
@@ -316,6 +346,7 @@ main { flex: 1; min-height: 0; position: relative; }
     <section class="report" id="report" aria-label="Report"></section>
     <div class="sortbar" id="sortbar" role="group" aria-label="Sort by"></div>
     <ul class="rows" id="rows"></ul>
+    </div>
   </section>
 </main>
 
@@ -380,6 +411,7 @@ main { flex: 1; min-height: 0; position: relative; }
   <div class="sheet-foot">
     <button class="btn danger" id="deleteBtn" type="button" hidden>Delete</button>
     <button class="btn primary" id="saveBtn" type="submit" form="visitForm">Save</button>
+    <button class="btn primary" id="saveNextBtn" type="button" hidden>Save &amp; next</button>
   </div>
 </section>
 
@@ -539,6 +571,9 @@ main { flex: 1; min-height: 0; position: relative; }
     if (tempMarker) tempMarker.remove();
     tempMarker = L.circleMarker([lat, lng], { radius: 10, weight: 3, color: cssVar('var(--accent)'), fillColor: '#fff', fillOpacity: 1, dashArray: '3 3' }).addTo(map);
     openNew(lat, lng, 'Finding address…');
+    lookupInto(lat, lng);
+  });
+  async function lookupInto(lat, lng) {
     try {
       const { address, area } = await reverse(lat, lng);
       if (draft && draft.lat === lat && draft.lng === lng) {
@@ -548,7 +583,7 @@ main { flex: 1; min-height: 0; position: relative; }
     } catch {
       if (draft && draft.lat === lat) { $('sheetTitle').textContent = 'Address not found'; $('fAddress').value = ''; $('fAddress').placeholder = 'Type the address'; }
     }
-  });
+  }
 
   $('locateBtn').addEventListener('click', () => {
     if (!navigator.geolocation) return toast('Location is not available on this device.');
@@ -624,6 +659,8 @@ main { flex: 1; min-height: 0; position: relative; }
       ${phone ? `<a href="tel:${esc(phone)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2Z"/></svg>Call</a>
                  <a href="sms:${esc(phone)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4V5Z"/></svg>Text</a>` : ''}
       ${p ? `<button type="button" id="showOnMap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="10" r="3"/><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11Z"/></svg>Show on map</button>` : ''}`;
+    $('quick').insertAdjacentHTML('beforeend', `<button type="button" id="startWalkBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="13" cy="4" r="2"/><path d="m9 21 2-6 3 3v3M7 12l2-4 4 1 2 4 3 1M11 15l-1-4"/></svg>Start walk here</button>`);
+    $('startWalkBtn').onclick = () => startWalk(lat, lng, $('fAddress').value.trim(), $('fArea').value.trim());
     const som = $('showOnMap');
     if (som) som.onclick = () => { closeSheet(); showTab('map'); map.setView([p.lat, p.lng], 18); };
   }
@@ -655,7 +692,7 @@ main { flex: 1; min-height: 0; position: relative; }
   }
 
   let openSheetId = null;
-  function showSheet(id) { $('scrim').hidden = false; $(id).hidden = false; openSheetId = id; }
+  function showSheet(id) { $('scrim').hidden = false; $(id).hidden = false; openSheetId = id; if (id === 'sheet') updateSaveNext(); }
   function closeSheet() {
     if (openSheetId) $(openSheetId).hidden = true;
     $('scrim').hidden = true; openSheetId = null; draft = null;
@@ -670,7 +707,8 @@ main { flex: 1; min-height: 0; position: relative; }
     e.preventDefault();
     if (!draft) return;
     const address = $('fAddress').value.trim();
-    if (!address) { $('fAddress').focus(); toast('Add the address before saving.'); return; }
+    if (!address) { saveThenNext = false; $('fAddress').focus(); toast('Add the address before saving.'); return; }
+    const wid = draft.walkId;
     const now = Date.now();
     const fields = { address, area: $('fArea').value.trim(), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
     let p = draft.id && places.find(x => x.id === draft.id);
@@ -683,9 +721,14 @@ main { flex: 1; min-height: 0; position: relative; }
       p = { id: uid(), lat: draft.lat, lng: draft.lng, created: now, updated: now, history: selStatus ? [{ t: now, status: selStatus }] : [], ...fields };
       places.push(p);
     }
+    afterSave(p, wid);
     if (persist()) toast(selStatus ? `Saved as ${statusOf(selStatus).label}` : 'Saved to your plan');
     closeSheet(); refresh();
+    if (saveThenNext) { saveThenNext = false; goNext(wid); }
   });
+
+  let saveThenNext = false;
+  $('saveNextBtn').addEventListener('click', () => { saveThenNext = true; $('visitForm').requestSubmit(); });
 
   function resetDelete() { const b = $('deleteBtn'); b.classList.remove('confirm'); b.textContent = 'Delete'; }
   $('deleteBtn').addEventListener('click', () => {
@@ -906,6 +949,332 @@ main { flex: 1; min-height: 0; position: relative; }
   }
   $('rows').addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (b) openSheet(b.dataset.id); });
 
+  // ---------- Walking route ----------
+  // Pull every house near a starting point from OpenStreetMap, then order them the way you'd walk:
+  // along one street (zig-zagging across it), then on to the nearest end of the next street.
+  const WALK_KEY = 'canvass-log.walk';
+  let walk = null;
+  try { walk = JSON.parse(localStorage.getItem(WALK_KEY)); if (walk && walk.loading) walk = null; } catch {}
+  function saveWalk() { try { walk ? localStorage.setItem(WALK_KEY, JSON.stringify(walk)) : localStorage.removeItem(WALK_KEY); } catch {} }
+
+  const OVERPASS = 'https://overpass-api.de/api/interpreter';
+  const HOUSE_TYPES = 'house|detached|residential|semidetached_house|terrace|bungalow|yes';
+  const ROAD_TYPES = 'residential|living_street|unclassified|tertiary|secondary|primary|service|road';
+  async function fetchHouses(lat, lng, r) {
+    const q = `[out:json][timeout:25];(
+      node["addr:housenumber"](around:${r},${lat},${lng});
+      way["addr:housenumber"](around:${r},${lat},${lng});
+      way["building"~"^(${HOUSE_TYPES})$"](around:${r},${lat},${lng});
+      way["highway"~"^(${ROAD_TYPES})$"]["name"](around:${r + 150},${lat},${lng});
+    );out tags geom;`;
+    const res = await fetch(OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    if (!res.ok) throw new Error('overpass ' + res.status);
+    return res.json();
+  }
+
+  // Flat x/y in meters around the start point; plenty accurate over a few hundred meters.
+  function projector(lat0, lng0) {
+    const kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    return (lat, lng) => [(lng - lng0) * kx, (lat - lat0) * ky];
+  }
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  function segDist(p, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+    return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+  }
+  function axisOf(pts) {
+    if (pts.length < 2) return [1, 0];
+    const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length, my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const [x, y] of pts) { sxx += (x - mx) ** 2; syy += (y - my) ** 2; sxy += (x - mx) * (y - my); }
+    const a = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    return [Math.cos(a), Math.sin(a)];
+  }
+  const centroid = g => [g.reduce((s, p) => s + p.lat, 0) / g.length, g.reduce((s, p) => s + p.lon, 0) / g.length];
+  function polyArea(xy) { let a = 0; for (let i = 0; i < xy.length; i++) { const [x1, y1] = xy[i], [x2, y2] = xy[(i + 1) % xy.length]; a += x1 * y2 - x2 * y1; } return Math.abs(a / 2); }
+  const normStreet = s => (s || '').toLowerCase().replace(/\b(street|st)\b/g, 'st').replace(/\b(avenue|ave)\b/g, 'ave').replace(/\b(road|rd)\b/g, 'rd').replace(/\b(drive|dr)\b/g, 'dr').replace(/\b(court|ct)\b/g, 'ct').replace(/\b(lane|ln)\b/g, 'ln').replace(/\b(place|pl)\b/g, 'pl').replace(/\b(boulevard|blvd)\b/g, 'blvd').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  function splitAddress(a) {
+    const first = (a || '').split(',')[0].trim();
+    const m = first.match(/^(\d+[a-z]?)\s+(.+)$/i);
+    return m ? { num: m[1], street: m[2] } : { num: '', street: first };
+  }
+
+  function buildRoute(data, start, r) {
+    const P = projector(start.lat, start.lng), sxy = [0, 0];
+    const streets = new Map();
+    const houses = [];
+    for (const el of data.elements || []) {
+      const t = el.tags || {};
+      if (el.type === 'way' && t.highway && t.name && el.geometry) {
+        const s = streets.get(t.name) || { name: t.name, pts: [], segs: [] };
+        const xy = el.geometry.map(g => P(g.lat, g.lon));
+        xy.forEach((p, i) => { s.pts.push(p); if (i) s.segs.push([xy[i - 1], p]); });
+        streets.set(t.name, s);
+      }
+    }
+    const addrPts = [];
+    for (const el of data.elements || []) {
+      const t = el.tags || {};
+      if (t.highway) continue;
+      let lat, lng, area = 0;
+      if (el.type === 'node') { lat = el.lat; lng = el.lon; }
+      else if (el.geometry && el.geometry.length) { [lat, lng] = centroid(el.geometry); area = polyArea(el.geometry.map(g => P(g.lat, g.lon))); }
+      else continue;
+      const xy = P(lat, lng);
+      if (dist(xy, sxy) > r) continue;
+      if (t['addr:housenumber']) {
+        const h = { id: `${el.type[0]}${el.id}`, lat, lng, xy, num: t['addr:housenumber'].split(/[;,]/)[0].trim(), street: t['addr:street'] || '' };
+        houses.push(h); addrPts.push(xy);
+      } else if (t.building) {
+        if (area && (area < 35 || area > 1500)) continue; // skip sheds and big commercial blocks
+        houses.push({ id: `${el.type[0]}${el.id}`, lat, lng, xy, num: '', street: '' });
+      }
+    }
+    // A building with an address point inside it is the same door: keep the address point.
+    const kept = houses.filter(h => h.num || !addrPts.some(a => dist(a, h.xy) < 18));
+    // Doors already logged in the app that OSM doesn't know about join the route too.
+    for (const p of places) {
+      const xy = P(p.lat, p.lng);
+      if (dist(xy, sxy) > r) continue;
+      const { num, street } = splitAddress(p.address);
+      const match = kept.find(h => dist(h.xy, xy) < 15 || (num && h.num && h.num === num && normStreet(h.street) === normStreet(street)));
+      if (match) { match.placeId = p.id; continue; }
+      kept.push({ id: 'p' + p.id, lat: p.lat, lng: p.lng, xy, num, street, placeId: p.id });
+    }
+    // Put each house on a street: its own address street when we have that road, else the nearest road.
+    const byNorm = new Map([...streets.values()].map(s => [normStreet(s.name), s]));
+    for (const h of kept) {
+      const own = h.street && byNorm.get(normStreet(h.street));
+      if (own) { h.street = own.name; continue; }
+      let best = null, bd = 80;
+      for (const s of streets.values()) for (const [a, b] of s.segs) { const d = segDist(h.xy, a, b); if (d < bd) { bd = d; best = s; } }
+      if (best && !h.num) h.street = best.name;
+      else if (best && !h.street) h.street = best.name;
+      if (!h.street) h.street = 'Other houses';
+    }
+    // Order within each street by position along it, so the list zig-zags across the street.
+    const groups = new Map();
+    for (const h of kept) { const g = groups.get(h.street) || []; g.push(h); groups.set(h.street, g); }
+    const segments = [];
+    for (const [name, hs] of groups) {
+      const road = streets.get(name);
+      const ax = axisOf(road && road.pts.length > 1 ? road.pts : hs.map(h => h.xy));
+      hs.forEach(h => (h.along = h.xy[0] * ax[0] + h.xy[1] * ax[1]));
+      hs.sort((a, b) => a.along - b.along || (parseInt(a.num) || 0) - (parseInt(b.num) || 0));
+      segments.push({ street: name, hs });
+    }
+    // Start at the chosen house, head the way with more doors, and come back for the rest later.
+    const route = [];
+    let cur = sxy;
+    const startH = kept.slice().sort((a, b) => dist(a.xy, sxy) - dist(b.xy, sxy))[0];
+    if (startH && dist(startH.xy, sxy) < 35) {
+      const seg = segments.find(s => s.hs.includes(startH)), i = seg.hs.indexOf(startH);
+      const up = seg.hs.slice(i), down = seg.hs.slice(0, i + 1).reverse();
+      const [first, rest] = up.length >= down.length ? [up, seg.hs.slice(0, i).reverse()] : [down, seg.hs.slice(i + 1)];
+      segments.splice(segments.indexOf(seg), 1);
+      route.push({ street: seg.street, hs: first });
+      if (rest.length) segments.push({ street: seg.street, hs: rest, cont: true });
+      cur = first[first.length - 1].xy;
+    }
+    while (segments.length) {
+      let bi = 0, rev = false, bd = Infinity;
+      segments.forEach((s, i) => {
+        const d0 = dist(cur, s.hs[0].xy), d1 = dist(cur, s.hs[s.hs.length - 1].xy);
+        if (d0 < bd) { bd = d0; bi = i; rev = false; }
+        if (d1 < bd) { bd = d1; bi = i; rev = true; }
+      });
+      const s = segments.splice(bi, 1)[0];
+      const hs = rev ? s.hs.slice().reverse() : s.hs;
+      const seen = route.some(x => x.street === s.street);
+      route.push({ street: s.street, hs, cont: seen });
+      cur = hs[hs.length - 1].xy;
+    }
+    return route.map(s => ({ street: s.street, cont: !!s.cont, houses: s.hs.map(h => ({ id: h.id, lat: h.lat, lng: h.lng, num: h.num, street: h.street === 'Other houses' ? '' : h.street, placeId: h.placeId || null })) }));
+  }
+
+  async function startWalk(lat, lng, address, area) {
+    walk = { start: { lat, lng, address: address || '', area: area || '', suffix: '' }, radius: walk ? walk.radius : 250, sections: [], loading: true };
+    listMode('walk'); renderWalk(); closeSheet();
+    try {
+      if (!address || !area) {
+        try { const r = await reverse(lat, lng); walk.start.address ||= r.address; walk.start.area ||= r.area; } catch {}
+      }
+      walk.start.suffix = walk.start.address.split(',').slice(1).join(',').trim();
+      const data = await fetchHouses(lat, lng, walk.radius);
+      walk.sections = buildRoute(data, walk.start, walk.radius);
+      walk.loading = false; walk.error = '';
+      const n = walkHouses().length;
+      toast(n ? `${n} houses on ${new Set(walk.sections.map(s => s.street)).size} streets` : 'No houses found nearby');
+    } catch {
+      walk.loading = false; walk.error = 'Could not load houses. Check your signal and try again.';
+    }
+    saveWalk(); renderWalk(); drawWalk();
+    const pts = walkHouses().map(h => [h.lat, h.lng]);
+    if (pts.length && !$('mapView').hidden) map.fitBounds(pts, { maxZoom: 18, padding: [40, 40] });
+  }
+  function endWalk() { walk = null; saveWalk(); renderWalk(); drawWalk(); updateSaveNext(); }
+
+  const walkHouses = () => (walk && walk.sections ? walk.sections.flatMap(s => s.houses) : []);
+  function placeFor(h) {
+    if (h.placeId) { const p = places.find(x => x.id === h.placeId); if (p) return p; h.placeId = null; }
+    return null;
+  }
+  const doneToday = p => !!p && (p.history || []).some(x => isToday(x.t));
+  function houseLabel(h) {
+    const p = placeFor(h);
+    if (p) return p.address.split(',')[0];
+    if (h.num) return `${h.num} ${h.street}`.trim();
+    return h.street ? `House on ${h.street}` : 'House (no number)';
+  }
+  function nextHouse(afterId) {
+    const all = walkHouses();
+    const i = afterId ? all.findIndex(h => h.id === afterId) : -1;
+    return all.slice(i + 1).find(h => !doneToday(placeFor(h))) || all.slice(0, i + 1).find(h => !doneToday(placeFor(h))) || null;
+  }
+  function lastVisit(p) {
+    const t = p && (p.history || []).at(-1)?.t;
+    if (!t) return 'Never';
+    return isToday(t) ? `Today ${fmtTime(t)}` : fmtDate(t);
+  }
+
+  function openHouse(id) {
+    const h = walkHouses().find(x => x.id === id); if (!h) return;
+    const p = placeFor(h);
+    if (p) openSheet(p.id);
+    else {
+      const full = h.num ? [`${h.num} ${h.street}`, walk.start.suffix].filter(Boolean).join(', ') : 'Finding address…';
+      openNew(h.lat, h.lng, full, !!h.num, walk.start.area);
+      if (!h.num) lookupInto(h.lat, h.lng);
+    }
+    draft.walkId = h.id; updateSaveNext();
+  }
+  function goNext(afterId) {
+    const h = nextHouse(afterId);
+    if (!h) { toast('Every house on this route is done for today'); return; }
+    if (!$('mapView').hidden) map.setView([h.lat, h.lng], Math.max(map.getZoom(), 18));
+    openHouse(h.id);
+  }
+  // When a door on the route is opened another way (a pin, the visit log), still offer Save & next.
+  function updateSaveNext() {
+    const b = $('saveNextBtn');
+    if (!walk || !draft) { b.hidden = true; return; }
+    if (!draft.walkId) {
+      const h = walkHouses().find(x => (draft.id && x.placeId === draft.id) || (Math.abs(x.lat - draft.lat) < 2e-5 && Math.abs(x.lng - draft.lng) < 2e-5));
+      if (h) draft.walkId = h.id;
+    }
+    b.hidden = !draft.walkId;
+  }
+  function afterSave(p, walkId) {
+    if (!walk || !walkId) return;
+    const h = walkHouses().find(x => x.id === walkId);
+    if (h) { h.placeId = p.id; saveWalk(); }
+  }
+
+  // List: segmented Walk route / Visit log
+  let mode = 'log';
+  try { mode = localStorage.getItem('canvass-log.listmode') || (walk ? 'walk' : 'log'); } catch {}
+  function listMode(m) {
+    mode = m;
+    $('walkPanel').hidden = m !== 'walk'; $('logPanel').hidden = m === 'walk';
+    $('segWalk').setAttribute('aria-selected', String(m === 'walk')); $('segLog').setAttribute('aria-selected', String(m !== 'walk'));
+    try { localStorage.setItem('canvass-log.listmode', m); } catch {}
+  }
+  $('segWalk').addEventListener('click', () => listMode('walk'));
+  $('segLog').addEventListener('click', () => listMode('log'));
+
+  function renderWalk() {
+    const el = $('walkPanel');
+    if (!walk) {
+      el.innerHTML = `<div class="report walk-empty">
+        <div class="report-head"><h2>Plan a walking route</h2></div>
+        <p>Pick the house you're starting at. Every house nearby is listed in the order you'd walk them, street by street, with its status and last visit.</p>
+        <div class="report-actions">
+          <button class="btn primary" type="button" id="walkFromMe">Start from my location</button>
+          <button class="btn" type="button" id="walkPick">Pick a house on the map</button>
+        </div></div>`;
+      $('walkFromMe').onclick = () => {
+        if (!navigator.geolocation) return toast('Location is not available on this device.');
+        toast('Finding you…');
+        navigator.geolocation.getCurrentPosition(pos => startWalk(pos.coords.latitude, pos.coords.longitude),
+          () => toast('Allow location access, or pick a house on the map instead.'), { enableHighAccuracy: true, timeout: 12000 });
+      };
+      $('walkPick').onclick = () => { showTab('map'); toast('Tap the house you are starting at, then Start walk here'); };
+      renderWalkbar(); return;
+    }
+    if (walk.loading) { el.innerHTML = `<div class="report"><div class="report-head"><h2>Finding houses…</h2></div><p>Looking up every house within ${walk.radius} m of ${esc(walk.start.address.split(',')[0] || 'your start')}.</p></div>`; renderWalkbar(); return; }
+    const all = walkHouses(), done = all.filter(h => doneToday(placeFor(h))).length, nxt = nextHouse(null);
+    const hideDone = !!walk.hideDone;
+    const head = `<div class="report">
+      <div class="report-head"><h2>From ${esc(walk.start.address.split(',')[0] || 'your location')}</h2>
+        <span class="rate">${done} of ${all.length} done today</span></div>
+      ${walk.error ? `<p class="warn">${esc(walk.error)}</p>` : ''}
+      ${!walk.error && !all.length ? `<p class="warn">OpenStreetMap has no houses mapped here. Try a bigger distance, or tap houses on the map.</p>` : ''}
+      <div class="bar" aria-hidden="true"><span style="--c:var(--st-lead);flex:${done}"></span><span style="--c:var(--line);flex:${all.length - done}"></span></div>
+      <div class="list-tools"><div class="row">
+        <label class="lt"><span class="label">Distance</span>
+          <select id="walkRadius">${[150, 250, 400, 600].map(r => `<option value="${r}" ${r === walk.radius ? 'selected' : ''}>Within ${r} m</option>`).join('')}</select></label>
+        <label class="lt check"><input type="checkbox" id="walkHide" ${hideDone ? 'checked' : ''}><span>Hide doors done today</span></label>
+      </div></div>
+      <div class="report-actions">
+        <button class="btn primary" type="button" id="walkNext" ${nxt ? '' : 'disabled'}>${nxt ? `Next: ${esc(houseLabel(nxt))}` : 'All done today'}</button>
+        <button class="btn" type="button" id="walkMap">Show on map</button>
+        <button class="btn" type="button" id="walkEnd">End walk</button>
+      </div></div>`;
+    let n = 0;
+    const body = walk.sections.map(s => {
+      const rows = s.houses.map(h => {
+        n++;
+        const p = placeFor(h), st = statusOf(p ? p.status : 'planned'), today = doneToday(p);
+        if (hideDone && today) return '';
+        const status = p && p.status ? st.label : 'Not visited';
+        return `<li><button type="button" class="wrow${nxt && nxt.id === h.id ? ' next' : ''}${today ? ' done' : ''}" data-h="${esc(h.id)}" style="--c:${p && p.status ? st.color : 'var(--st-planned)'}">
+          <span class="ord">${n}</span>
+          <span class="addr">${esc(houseLabel(h))}</span><span class="when">${lastVisit(p)}</span>
+          <span class="meta"><span class="dot ${p && p.status ? '' : 'planned'}"></span>${[status, p && p.name].filter(Boolean).map(esc).join(' · ')}</span>
+        </button></li>`;
+      }).join('');
+      return rows ? `<li class="street"><span>${esc(s.street)}${s.cont ? ' (continued)' : ''}</span><span>${s.houses.length}</span></li>${rows}` : '';
+    }).join('');
+    el.innerHTML = head + `<ul class="rows walk-rows">${body}</ul>`;
+    $('walkRadius').onchange = e => { walk.radius = +e.target.value; startWalk(walk.start.lat, walk.start.lng, walk.start.address, walk.start.area); };
+    $('walkHide').onchange = e => { walk.hideDone = e.target.checked; saveWalk(); renderWalk(); };
+    $('walkNext').onclick = () => goNext(null);
+    $('walkMap').onclick = () => { showTab('map'); const pts = all.map(h => [h.lat, h.lng]); if (pts.length) map.fitBounds(pts, { maxZoom: 18, padding: [30, 30] }); };
+    $('walkEnd').onclick = () => { if ($('walkEnd').dataset.sure) endWalk(); else { $('walkEnd').dataset.sure = '1'; $('walkEnd').textContent = 'Tap to end'; } };
+    renderWalkbar();
+  }
+  $('walkPanel').addEventListener('click', e => { const b = e.target.closest('button[data-h]'); if (b) openHouse(b.dataset.h); });
+
+  // Map: route line, unvisited houses as hollow dots, the next door ringed in orange.
+  const walkLayer = L.layerGroup().addTo(map);
+  function drawWalk() {
+    walkLayer.clearLayers();
+    if (!walk || walk.loading) { renderWalkbar(); return; }
+    const all = walkHouses(), nxt = nextHouse(null);
+    if (all.length > 1) L.polyline(all.map(h => [h.lat, h.lng]), { color: cssVar('var(--accent)'), weight: 2, opacity: .55, dashArray: '4 6', interactive: false }).addTo(walkLayer);
+    for (const h of all) {
+      if (placeFor(h)) continue; // logged doors already have a colored pin
+      L.circleMarker([h.lat, h.lng], { radius: 6, weight: 2, color: cssVar('var(--st-planned)'), fillColor: '#ffffff', fillOpacity: 1, bubblingMouseEvents: false })
+        .on('click', () => openHouse(h.id)).bindTooltip(esc(houseLabel(h)), { direction: 'top', offset: [0, -6] }).addTo(walkLayer);
+    }
+    if (nxt) L.circleMarker([nxt.lat, nxt.lng], { radius: 15, weight: 3, color: cssVar('var(--accent)'), fill: false, interactive: false }).addTo(walkLayer);
+    renderWalkbar();
+  }
+  function renderWalkbar() {
+    const bar = $('walkbar');
+    if (!walk) { bar.hidden = true; return; }
+    $('hint').hidden = true; bar.hidden = false;
+    if (walk.loading) { bar.innerHTML = `<span class="wb-text">Finding houses…</span>`; return; }
+    const all = walkHouses(), done = all.filter(h => doneToday(placeFor(h))).length, nxt = nextHouse(null);
+    bar.innerHTML = `<span class="wb-text"><b>${done}/${all.length}</b> done${nxt ? ` · Next: ${esc(houseLabel(nxt))}` : ''}</span>
+      <button type="button" class="btn primary" id="wbNext" ${nxt ? '' : 'disabled'}>Next</button>
+      <button type="button" class="btn" id="wbList">List</button>`;
+    $('wbNext').onclick = () => goNext(null);
+    $('wbList').onclick = () => { listMode('walk'); showTab('list'); };
+  }
+
+
   // ---------- Tabs ----------
   function showTab(t) {
     const isMap = t === 'map';
@@ -953,8 +1322,8 @@ main { flex: 1; min-height: 0; position: relative; }
   });
 
   // ---------- Boot ----------
-  function refresh() { legend(); drawPins(); areaOptions(); renderTopCount(); renderList(); }
-  load(); refresh(); backfillAreas();
+  function refresh() { legend(); drawPins(); areaOptions(); renderTopCount(); renderList(); renderWalk(); drawWalk(); }
+  load(); listMode(mode); refresh(); backfillAreas();
   window.addEventListener('online', backfillAreas);
   let tab = 'map'; try { tab = localStorage.getItem('canvass-log.tab') || 'map'; } catch {}
   showTab(tab);
