@@ -135,9 +135,10 @@ main { flex: 1; min-height: 0; position: relative; }
 
 /* List view */
 #listView { overflow: auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+#listView > * { flex: none; }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; }
-.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
-.stat b { font: 700 26px/1 var(--font-label); font-variant-numeric: tabular-nums; color: var(--c, var(--ink)); }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.stat b { font: 700 24px/1 var(--font-label); font-variant-numeric: tabular-nums; color: var(--c, var(--ink)); }
 .stat .label { font-size: 12px; }
 .list-tools { display: flex; flex-direction: column; gap: 8px; }
 .list-tools input, .list-tools select {
@@ -158,6 +159,32 @@ main { flex: 1; min-height: 0; position: relative; }
 .rows .note { grid-column: 2 / 4; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .empty { text-align: center; color: var(--muted); padding: 32px 12px; display: flex; flex-direction: column; gap: 6px; align-items: center; }
 .empty strong { color: var(--ink); font-size: 17px; }
+.rows .area { font-size: 13px; color: var(--muted); }
+.list-tools label.lt { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.list-tools input[type=date] { padding: 0 10px; }
+.sortbar { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; align-items: center; }
+.sortbar::-webkit-scrollbar { display: none; }
+.sortbar .label { flex: none; margin-right: 2px; }
+.sortbar button {
+  flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px;
+  font-size: 14px; font-weight: 500; display: inline-flex; gap: 4px; align-items: center;
+}
+.sortbar button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.report { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.report-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.report-head h2 { margin: 0; font: 700 20px/1.1 var(--font-label); letter-spacing: .02em; text-wrap: balance; }
+.report-head .rate { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--paper); }
+.bar span { background: var(--c); }
+.areas { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.areas th { text-align: left; font: 700 12px var(--font-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 4px 6px 4px 0; }
+.areas th.n, .areas td.n { text-align: right; padding-right: 0; padding-left: 6px; }
+.areas td { padding: 5px 6px 5px 0; border-top: 1px solid var(--line); }
+.areas td:first-child { overflow-wrap: anywhere; }
+.areas .dotn { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 4px; vertical-align: 1px; }
+.areas-wrap { overflow-x: auto; }
+.report-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.report-actions .btn { height: 40px; font-size: 14px; flex: 1; min-width: 120px; }
 
 /* Tab bar */
 .tabs {
@@ -262,20 +289,32 @@ main { flex: 1; min-height: 0; position: relative; }
     </div>
   </section>
   <section class="view" id="listView" aria-label="List" hidden>
-    <div class="summary" id="summary"></div>
     <div class="list-tools">
-      <input id="listFilter" type="search" placeholder="Filter by address, name, phone or note" aria-label="Filter list">
       <div class="row">
-        <select id="statusFilter" aria-label="Status">
-          <option value="all">All statuses</option>
-        </select>
-        <select id="sortBy" aria-label="Sort">
-          <option value="recent">Most recent</option>
-          <option value="street">By street</option>
-          <option value="status">By status</option>
-        </select>
+        <label class="lt"><span class="label">Date</span>
+          <select id="dateFilter">
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="week">Last 7 days</option>
+            <option value="month">Last 30 days</option>
+            <option value="all">All dates</option>
+            <option value="pick">Pick a date…</option>
+          </select>
+        </label>
+        <label class="lt"><span class="label">Status</span>
+          <select id="statusFilter"><option value="all">All statuses</option></select>
+        </label>
       </div>
+      <div class="row">
+        <label class="lt" id="pickWrap" hidden><span class="label">Day</span><input id="pickDate" type="date"></label>
+        <label class="lt"><span class="label">Neighborhood</span>
+          <select id="areaFilter"><option value="all">All neighborhoods</option></select>
+        </label>
+      </div>
+      <input id="listFilter" type="search" placeholder="Search address, name, phone or note" aria-label="Search the list">
     </div>
+    <section class="report" id="report" aria-label="Report"></section>
+    <div class="sortbar" id="sortbar" role="group" aria-label="Sort by"></div>
     <ul class="rows" id="rows"></ul>
   </section>
 </main>
@@ -308,6 +347,11 @@ main { flex: 1; min-height: 0; position: relative; }
     <div class="field">
       <label class="label" for="fAddress">Address</label>
       <input id="fAddress" required>
+    </div>
+    <div class="field">
+      <label class="label" for="fArea">Neighborhood</label>
+      <input id="fArea" list="areaList" autocapitalize="words" placeholder="Filled in from the map">
+      <datalist id="areaList"></datalist>
     </div>
     <div class="two">
       <div class="field">
@@ -397,6 +441,8 @@ main { flex: 1; min-height: 0; position: relative; }
   const fmtDate = t => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const fmtDateTime = t => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const isToday = t => new Date(t).toDateString() === new Date().toDateString();
+  const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const fmtTime = t => new Date(t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
   function toast(msg) {
     const el = $('toast'); el.textContent = msg; el.hidden = false;
@@ -416,7 +462,24 @@ main { flex: 1; min-height: 0; position: relative; }
     const r = await fetch(`${NOMINATIM}/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`, { headers: { 'Accept-Language': navigator.language || 'en' } });
     if (!r.ok) throw new Error('lookup failed');
     const j = await r.json();
-    return { address: shortAddress(j.address, j.display_name), houseNumber: j.address && j.address.house_number };
+    return { address: shortAddress(j.address, j.display_name), houseNumber: j.address && j.address.house_number, area: areaOf(j.address) };
+  }
+  function areaOf(a) {
+    if (!a) return '';
+    return a.neighbourhood || a.quarter || a.suburb || a.residential || a.city_district || a.hamlet || a.village || a.town || a.city || '';
+  }
+  // Older saved addresses have no neighborhood yet: look them up quietly, one per second (Nominatim's limit).
+  let backfilling = false;
+  async function backfillAreas() {
+    if (backfilling || !navigator.onLine) return;
+    backfilling = true;
+    try {
+      for (const p of places.filter(x => x.area == null)) {
+        try { const r = await reverse(p.lat, p.lng); p.area = r.area || ''; persist(); refresh(); }
+        catch { break; }
+        await new Promise(res => setTimeout(res, 1100));
+      }
+    } finally { backfilling = false; }
   }
   async function search(q) {
     const c = map.getCenter();
@@ -477,9 +540,10 @@ main { flex: 1; min-height: 0; position: relative; }
     tempMarker = L.circleMarker([lat, lng], { radius: 10, weight: 3, color: cssVar('var(--accent)'), fillColor: '#fff', fillOpacity: 1, dashArray: '3 3' }).addTo(map);
     openNew(lat, lng, 'Finding address…');
     try {
-      const { address } = await reverse(lat, lng);
-      if (draft && draft.lat === lat && draft.lng === lng && !$('fAddress').dataset.touched) {
-        $('fAddress').value = address; $('sheetTitle').textContent = address || 'Unknown address';
+      const { address, area } = await reverse(lat, lng);
+      if (draft && draft.lat === lat && draft.lng === lng) {
+        if (!$('fAddress').dataset.touched) { $('fAddress').value = address; $('sheetTitle').textContent = address || 'Unknown address'; }
+        if (!$('fArea').value) $('fArea').value = area;
       }
     } catch {
       if (draft && draft.lat === lat) { $('sheetTitle').textContent = 'Address not found'; $('fAddress').value = ''; $('fAddress').placeholder = 'Type the address'; }
@@ -526,7 +590,7 @@ main { flex: 1; min-height: 0; position: relative; }
           if (tempMarker) tempMarker.remove();
           tempMarker = L.circleMarker([lat, lng], { radius: 10, weight: 3, color: cssVar('var(--accent)'), fillColor: '#fff', fillOpacity: 1, dashArray: '3 3' }).addTo(map);
           const existing = places.find(p => p.address === shortAddress(r.address));
-          existing ? openSheet(existing.id) : openNew(lat, lng, shortAddress(r.address, r.display_name), true);
+          existing ? openSheet(existing.id) : openNew(lat, lng, shortAddress(r.address, r.display_name), true, areaOf(r.address));
         }
       };
     } catch {
@@ -564,12 +628,12 @@ main { flex: 1; min-height: 0; position: relative; }
     if (som) som.onclick = () => { closeSheet(); showTab('map'); map.setView([p.lat, p.lng], 18); };
   }
 
-  function openNew(lat, lng, address, known) {
+  function openNew(lat, lng, address, known, area) {
     draft = { lat, lng };
     selStatus = ''; paintStatus();
     $('fAddress').value = known ? address : ''; $('fAddress').placeholder = 'Looking up…'; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = address; $('sheetSub').textContent = 'New address';
-    $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = '';
+    $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || '';
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
     fillQuick(null); showSheet('sheet');
   }
@@ -582,7 +646,7 @@ main { flex: 1; min-height: 0; position: relative; }
     $('fAddress').value = p.address; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = p.address;
     $('sheetSub').textContent = `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
-    $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || '';
+    $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || '';
     const h = (p.history || []).slice().reverse();
     $('historyWrap').hidden = !h.length;
     $('history').innerHTML = h.map(x => { const s = statusOf(x.status); return `<li style="--c:${s.color}"><span class="dot"></span><time>${fmtDateTime(x.t)}</time>${s.label}</li>`; }).join('');
@@ -608,10 +672,12 @@ main { flex: 1; min-height: 0; position: relative; }
     const address = $('fAddress').value.trim();
     if (!address) { $('fAddress').focus(); toast('Add the address before saving.'); return; }
     const now = Date.now();
-    const fields = { address, name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
+    const fields = { address, area: $('fArea').value.trim(), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
     let p = draft.id && places.find(x => x.id === draft.id);
     if (p) {
-      if (p.status !== selStatus && selStatus) (p.history ||= []).push({ t: now, status: selStatus });
+      // Log a visit when the status changes, or when the door is knocked again on a new day.
+      const last = (p.history || []).at(-1);
+      if (selStatus && (!last || last.status !== selStatus || dayKey(last.t) !== dayKey(now))) (p.history ||= []).push({ t: now, status: selStatus });
       Object.assign(p, fields, { updated: now });
     } else {
       p = { id: uid(), lat: draft.lat, lng: draft.lng, created: now, updated: now, history: selStatus ? [{ t: now, status: selStatus }] : [], ...fields };
@@ -629,44 +695,211 @@ main { flex: 1; min-height: 0; position: relative; }
     toast('Address deleted'); closeSheet(); refresh();
   });
 
-  // ---------- List ----------
+  // ---------- List & daily report ----------
+  // Each row is one visit (a status logged at a door on a given day), so the list doubles as a visit log.
   $('statusFilter').insertAdjacentHTML('beforeend', [...STATUSES, PLANNED].map(s => `<option value="${s.key}">${s.label}</option>`).join(''));
-  ['listFilter', 'statusFilter', 'sortBy'].forEach(id => $(id).addEventListener('input', renderList));
+  $('pickDate').value = dayKey(Date.now());
+  const SORTS = [
+    { key: 'time', label: 'Date', dir: -1 },
+    { key: 'street', label: 'Street', dir: 1 },
+    { key: 'area', label: 'Neighborhood', dir: 1 },
+    { key: 'status', label: 'Status', dir: 1 },
+    { key: 'name', label: 'Name', dir: 1 },
+  ];
+  let sort = { key: 'time', dir: -1 };
+  try { const s = JSON.parse(localStorage.getItem('canvass-log.sort')); if (s && SORTS.some(x => x.key === s.key)) sort = s; } catch {}
+  try { const d = localStorage.getItem('canvass-log.date'); if (d && d !== 'pick') $('dateFilter').value = d; } catch {}
+
+  function renderSortbar() {
+    $('sortbar').innerHTML = `<span class="label">Sort</span>` + SORTS.map(s => {
+      const on = sort.key === s.key;
+      return `<button type="button" data-k="${s.key}" aria-pressed="${on}">${s.label}${on ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</button>`;
+    }).join('');
+  }
+  $('sortbar').addEventListener('click', e => {
+    const b = e.target.closest('button[data-k]'); if (!b) return;
+    const s = SORTS.find(x => x.key === b.dataset.k);
+    sort = sort.key === s.key ? { key: s.key, dir: -sort.dir } : { key: s.key, dir: s.dir };
+    try { localStorage.setItem('canvass-log.sort', JSON.stringify(sort)); } catch {}
+    renderList();
+  });
+  ['listFilter', 'statusFilter', 'areaFilter', 'pickDate'].forEach(id => $(id).addEventListener('input', renderList));
+  $('dateFilter').addEventListener('input', () => {
+    $('pickWrap').hidden = $('dateFilter').value !== 'pick';
+    try { localStorage.setItem('canvass-log.date', $('dateFilter').value); } catch {}
+    renderList();
+  });
+
+  // Date range for the current filter: [startMs, endMs), plus a readable label.
+  function range() {
+    const v = $('dateFilter').value;
+    const sod = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+    const DAY = 864e5, today = sod(Date.now());
+    const longDay = t => new Date(t).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    if (v === 'today') return { from: today, to: today + DAY, label: `Today, ${longDay(today)}`, oneDay: true };
+    if (v === 'yesterday') return { from: today - DAY, to: today, label: `Yesterday, ${longDay(today - DAY)}`, oneDay: true };
+    if (v === 'week') return { from: today - 6 * DAY, to: today + DAY, label: `Last 7 days (${fmtDate(today - 6 * DAY)} – ${fmtDate(today)})` };
+    if (v === 'month') return { from: today - 29 * DAY, to: today + DAY, label: `Last 30 days (${fmtDate(today - 29 * DAY)} – ${fmtDate(today)})` };
+    if (v === 'pick') {
+      const [y, m, d] = ($('pickDate').value || dayKey(Date.now())).split('-').map(Number);
+      const from = new Date(y, m - 1, d).getTime();
+      return { from, to: from + DAY, label: longDay(from), oneDay: true };
+    }
+    return { from: -Infinity, to: Infinity, label: 'All dates', all: true };
+  }
+
+  const areaName = p => (p.area || '').trim() || 'No neighborhood';
+  function areaOptions() {
+    const names = [...new Set(places.map(areaName))].sort((a, b) => a.localeCompare(b));
+    const cur = $('areaFilter').value;
+    $('areaFilter').innerHTML = `<option value="all">All neighborhoods</option>` + names.map(n => `<option>${esc(n)}</option>`).join('');
+    $('areaFilter').value = names.includes(cur) ? cur : 'all';
+    $('areaList').innerHTML = names.filter(n => n !== 'No neighborhood').map(n => `<option value="${esc(n)}">`).join('');
+  }
 
   function streetKey(a) {
     const first = (a || '').split(',')[0].trim();
     const m = first.match(/^(\d+)\s*[a-z]?\s+(.*)$/i);
     return m ? [m[2].toLowerCase(), +m[1]] : [first.toLowerCase(), 0];
   }
-  function renderSummary() {
+  const ORDER = ['lead', 'return', 'nocontact', 'rejected', 'planned'];
+
+  // Visits that pass every filter.
+  function visibleVisits() {
+    const r = range(), sf = $('statusFilter').value, af = $('areaFilter').value;
+    const q = $('listFilter').value.trim().toLowerCase();
+    const out = [];
+    for (const p of places) {
+      if (af !== 'all' && areaName(p) !== af) continue;
+      if (q && ![p.address, p.name, p.phone, p.notes, p.area].some(v => (v || '').toLowerCase().includes(q))) continue;
+      const hist = p.history || [];
+      if (!hist.length) {
+        // Planned doors have no visit yet; show them when no date limit is set.
+        if (r.all && (sf === 'all' || sf === 'planned')) out.push({ p, t: p.created || p.updated, status: 'planned' });
+        continue;
+      }
+      for (const h of hist) {
+        if (h.t < r.from || h.t >= r.to) continue;
+        if (sf !== 'all' && h.status !== sf) continue;
+        out.push({ p, t: h.t, status: h.status });
+      }
+    }
+    const d = sort.dir;
+    const cmp = {
+      time: (a, b) => (a.t - b.t) * d,
+      street: (a, b) => { const [sa, na] = streetKey(a.p.address), [sb, nb] = streetKey(b.p.address); return (sa.localeCompare(sb) || na - nb) * d || b.t - a.t; },
+      area: (a, b) => areaName(a.p).localeCompare(areaName(b.p)) * d || b.t - a.t,
+      status: (a, b) => (ORDER.indexOf(a.status) - ORDER.indexOf(b.status)) * d || b.t - a.t,
+      name: (a, b) => { const an = (a.p.name || '').toLowerCase(), bn = (b.p.name || '').toLowerCase(); if (!an !== !bn) return an ? -1 : 1; return an.localeCompare(bn) * d || b.t - a.t; },
+    }[sort.key];
+    return out.sort(cmp);
+  }
+
+  // Summary of the filtered visits: each door counts once, by its latest outcome in the range.
+  function summarize(visits) {
+    const latest = new Map();
+    for (const v of visits) { const cur = latest.get(v.p.id); if (!cur || v.t > cur.t) latest.set(v.p.id, v); }
+    const doors = [...latest.values()];
+    const count = k => doors.filter(v => v.status === k).length;
+    const byArea = new Map();
+    for (const v of doors) {
+      const a = areaName(v.p), row = byArea.get(a) || { area: a, doors: 0, lead: 0, return: 0, rejected: 0, nocontact: 0, planned: 0 };
+      row.doors++; row[v.status]++; byArea.set(a, row);
+    }
+    return { visits: visits.length, doors: doors.length, count, areas: [...byArea.values()].sort((a, b) => b.doors - a.doors || a.area.localeCompare(b.area)) };
+  }
+  const pct = (n, d) => d ? Math.round((n / d) * 100) + '%' : '–';
+
+  function renderReport(visits) {
+    const r = range(), s = summarize(visits);
+    const visited = s.doors - s.count('planned');
+    const af = $('areaFilter').value;
+    const title = r.label + (af !== 'all' ? ` · ${af}` : '');
+    const tiles = [
+      { label: r.all ? 'Doors' : 'Doors knocked', n: visited, c: 'var(--ink)' },
+      ...STATUSES.map(st => ({ label: st.label, n: s.count(st.key), c: st.color })),
+    ];
+    if (r.all) tiles.push({ label: PLANNED.label, n: s.count('planned'), c: PLANNED.color });
+    const bar = STATUSES.map(st => `<span style="--c:${st.color};flex:${s.count(st.key)}"></span>`).join('');
+    const areaRows = s.areas.map(a => `<tr><td>${esc(a.area)}</td><td class="n">${a.doors - a.planned}</td>
+        <td class="n"><span class="dotn" style="--c:var(--st-lead)"></span>${a.lead}</td>
+        <td class="n"><span class="dotn" style="--c:var(--st-return)"></span>${a.return}</td>
+        <td class="n">${pct(a.lead, a.doors - a.planned)}</td></tr>`).join('');
+    $('report').innerHTML = `
+      <div class="report-head"><h2>${esc(title)}</h2><span class="rate">${visited ? `${pct(s.count('lead'), visited)} lead rate` : ''}</span></div>
+      <div class="summary">${tiles.map(t => `<div class="stat" style="--c:${t.c}"><b>${t.n}</b><span class="label">${t.label}</span></div>`).join('')}</div>
+      ${visited ? `<div class="bar" aria-hidden="true">${bar}</div>` : ''}
+      ${s.areas.length > 1 || (s.areas.length === 1 && af === 'all') ? `<div class="areas-wrap"><table class="areas">
+        <thead><tr><th>Neighborhood</th><th class="n">Doors</th><th class="n">Leads</th><th class="n">Return</th><th class="n">Rate</th></tr></thead>
+        <tbody>${areaRows}</tbody></table></div>` : ''}
+      <div class="report-actions">
+        <button class="btn" type="button" id="shareReport">Share report</button>
+        <button class="btn" type="button" id="csvReport">Export these rows</button>
+      </div>`;
+    $('shareReport').onclick = () => shareReport(title, visits, s);
+    $('csvReport').onclick = () => exportVisits(visits);
+    $('shareReport').disabled = $('csvReport').disabled = !visits.length;
+  }
+
+  function reportText(title, visits, s) {
+    const visited = s.doors - s.count('planned');
+    const lines = [`Canvass report: ${title}`, '',
+      `Doors knocked: ${visited}`,
+      ...STATUSES.map(st => `${st.label}: ${s.count(st.key)}`),
+      `Lead rate: ${pct(s.count('lead'), visited)}`];
+    if (s.areas.length) {
+      lines.push('', 'By neighborhood:');
+      s.areas.forEach(a => lines.push(`- ${a.area}: ${a.doors - a.planned} doors, ${a.lead} leads, ${a.return} return later`));
+    }
+    lines.push('', 'Visits:');
+    visits.slice().sort((a, b) => a.t - b.t).forEach(v => {
+      const bits = [range().oneDay ? fmtTime(v.t) : fmtDateTime(v.t), v.p.address, statusOf(v.status).label, v.p.name, v.p.phone].filter(Boolean);
+      lines.push(`- ${bits.join(' | ')}${v.p.notes ? `\n  Note: ${v.p.notes}` : ''}`);
+    });
+    return lines.join('\n');
+  }
+  async function shareReport(title, visits, s) {
+    const text = reportText(title, visits, s);
+    if (navigator.share) {
+      try { await navigator.share({ title: `Canvass report: ${title}`, text }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(text); toast('Report copied. Paste it into a text or email.'); }
+    catch { download(`canvass-report-${stamp()}.txt`, text, 'text/plain'); }
+  }
+  function exportVisits(visits) {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['Date', 'Time', 'Address', 'Neighborhood', 'Status', 'Name', 'Phone', 'Notes', 'Latitude', 'Longitude'];
+    const rows = visits.map(v => [dayKey(v.t), fmtTime(v.t), v.p.address, areaName(v.p), statusOf(v.status).label, v.p.name, v.p.phone, v.p.notes, v.p.lat.toFixed(6), v.p.lng.toFixed(6)].map(q).join(','));
+    download(`canvass-visits-${stamp()}.csv`, [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
+  }
+
+  function renderTopCount() {
     const today = places.filter(p => (p.history || []).some(h => isToday(h.t)));
-    const c = k => places.filter(p => statusOf(p.status).key === k).length;
-    $('summary').innerHTML = `
-      <div class="stat"><b>${today.length}</b><span class="label">Doors today</span></div>
-      ${[...STATUSES, PLANNED].map(s => `<div class="stat" style="--c:${s.color}"><b>${c(s.key)}</b><span class="label">${s.label}</span></div>`).join('')}`;
-    const leads = today.filter(p => p.status === 'lead').length;
+    const leads = today.filter(p => (p.history || []).some(h => isToday(h.t) && h.status === 'lead')).length;
     $('todayCount').textContent = today.length ? `Today: ${today.length} doors · ${leads} lead${leads === 1 ? '' : 's'}` : '';
   }
+
   function renderList() {
-    const q = $('listFilter').value.trim().toLowerCase();
-    const sf = $('statusFilter').value, sort = $('sortBy').value;
-    let rows = places.filter(p => (sf === 'all' || statusOf(p.status).key === sf) &&
-      (!q || [p.address, p.name, p.phone, p.notes].some(v => (v || '').toLowerCase().includes(q))));
-    const order = ['return', 'lead', 'nocontact', 'planned', 'rejected'];
-    rows.sort(sort === 'street' ? (a, b) => { const [sa, na] = streetKey(a.address), [sb, nb] = streetKey(b.address); return sa.localeCompare(sb) || na - nb; }
-      : sort === 'status' ? (a, b) => order.indexOf(statusOf(a.status).key) - order.indexOf(statusOf(b.status).key) || b.updated - a.updated
-      : (a, b) => b.updated - a.updated);
+    $('pickWrap').hidden = $('dateFilter').value !== 'pick';
+    renderSortbar();
+    const visits = visibleVisits(), r = range();
+    renderReport(visits);
     if (!places.length) {
       $('rows').innerHTML = `<li class="empty"><strong>No addresses yet</strong>Open the map and tap a house to log your first door.</li>`; return;
     }
-    if (!rows.length) { $('rows').innerHTML = `<li class="empty"><strong>Nothing matches</strong>Try a different filter.</li>`; return; }
-    $('rows').innerHTML = rows.map(p => {
-      const s = statusOf(p.status);
+    if (!visits.length) {
+      const hint = $('dateFilter').value === 'today' ? 'No doors logged today yet. Pick another date to see past visits.' : 'Try a different date, status or neighborhood.';
+      $('rows').innerHTML = `<li class="empty"><strong>No visits match</strong>${hint}</li>`; return;
+    }
+    $('rows').innerHTML = visits.map(v => {
+      const p = v.p, s = statusOf(v.status);
+      const when = v.status === 'planned' ? 'Planned' : r.oneDay ? fmtTime(v.t) : fmtDateTime(v.t);
       const meta = [s.label, p.name, p.phone].filter(Boolean).map(esc).join(' · ');
       return `<li><button type="button" data-id="${p.id}" style="--c:${s.color}">
         <span class="dot ${s.key === 'planned' ? 'planned' : ''}"></span>
-        <span class="addr">${esc(p.address)}</span><span class="when">${fmtDate(p.updated)}</span>
-        <span class="meta">${meta}</span>
+        <span class="addr">${esc(p.address)}</span><span class="when">${when}</span>
+        <span class="meta">${meta}<br><span class="area">${esc(areaName(p))}</span></span>
         ${p.notes ? `<span class="note">${esc(p.notes)}</span>` : ''}
       </button></li>`;
     }).join('');
@@ -694,8 +927,8 @@ main { flex: 1; min-height: 0; position: relative; }
   const stamp = () => new Date().toISOString().slice(0, 10);
   $('exportCsv').addEventListener('click', () => {
     const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['Address', 'Name', 'Phone', 'Status', 'Notes', 'Last updated', 'Visits', 'Latitude', 'Longitude'];
-    const lines = places.map(p => [p.address, p.name, p.phone, statusOf(p.status).label, p.notes, new Date(p.updated).toLocaleString(), (p.history || []).length, p.lat.toFixed(6), p.lng.toFixed(6)].map(q).join(','));
+    const head = ['Address', 'Neighborhood', 'Name', 'Phone', 'Status', 'Notes', 'Last updated', 'Visits', 'Latitude', 'Longitude'];
+    const lines = places.map(p => [p.address, p.area, p.name, p.phone, statusOf(p.status).label, p.notes, new Date(p.updated).toLocaleString(), (p.history || []).length, p.lat.toFixed(6), p.lng.toFixed(6)].map(q).join(','));
     download(`canvass-log-${stamp()}.csv`, [head.map(q).join(','), ...lines].join('\n'), 'text/csv');
   });
   $('exportJson').addEventListener('click', () => download(`canvass-log-backup-${stamp()}.json`, JSON.stringify({ app: 'canvass-log', version: 1, places }, null, 1), 'application/json'));
@@ -720,8 +953,9 @@ main { flex: 1; min-height: 0; position: relative; }
   });
 
   // ---------- Boot ----------
-  function refresh() { legend(); drawPins(); renderSummary(); renderList(); }
-  load(); refresh();
+  function refresh() { legend(); drawPins(); areaOptions(); renderTopCount(); renderList(); }
+  load(); refresh(); backfillAreas();
+  window.addEventListener('online', backfillAreas);
   let tab = 'map'; try { tab = localStorage.getItem('canvass-log.tab') || 'map'; } catch {}
   showTab(tab);
   if (places.length && !saved) map.fitBounds(L.latLngBounds(places.map(p => [p.lat, p.lng])), { maxZoom: 17, padding: [40, 40] });
