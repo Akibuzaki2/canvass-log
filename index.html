@@ -1131,7 +1131,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         if (F.type !== 2) return;
         const t = tagsOf(tr, F);
         if (/^(motorway|rail|transit|ferry|aerialway|raceway|bus_guideway|busway)$/.test(t.class || '') || t.ramp === 1 || t.ramp === true || t.foot === 'no') return;
-        tileParts(F.geom).forEach((part, j) => elements.push({ type: 'way', id: `w${x}.${y}.${i}.${j}`, tags: { walk: t.class || 'path' }, geometry: part.map(pt => toLL(tr, pt)) }));
+        tileParts(F.geom).forEach((part, j) => elements.push({ type: 'way', id: `w${x}.${y}.${i}.${j}`, tags: { walk: t.class || 'path', brunnel: t.brunnel || '' }, geometry: part.map(pt => toLL(tr, pt)) }));
       });
       const bl = layers.building;
       if (bl) bl.feats.forEach((F, i) => tileParts(F.geom).forEach((ring, j) => {
@@ -1324,8 +1324,9 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       if (el.type !== 'way' || !ok || !el.geometry) continue;
       const pts = el.geometry.map(g => P(g.lat, g.lon));
       if (!pts.some(inBox)) continue;
+      const raised = /^(bridge|tunnel)$/.test(t.brunnel || '') || (t.bridge && t.bridge !== 'no') || (t.tunnel && t.tunnel !== 'no');
       let prev = null;
-      for (const p of pts) { const i = node(p); if (prev != null && prev !== i) { link(prev, i, dist(xy[prev], xy[i])); segs.push([prev, i]); } prev = i; }
+      for (const p of pts) { const i = node(p); if (prev != null && prev !== i) { link(prev, i, dist(xy[prev], xy[i])); segs.push([prev, i, raised]); } prev = i; }
     }
     if (segs.length < 3) return null;
     const C = 40, grid = new Map();
@@ -1337,12 +1338,46 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       cellsOf(p, p, maxD, c => { for (const k of grid.get(c) || []) { if (seen.has(k)) continue; seen.add(k); const [i, j] = segs[k], d = segDist(p, xy[i], xy[j]); if (d < bd) { bd = d; best = k; } } });
       return best == null ? null : { k: best, d: bd };
     };
-    // Tiles can drop the shared point where a side street meets a straight road: reconnect loose ends.
-    for (let i = 0; i < xy.length; i++) {
-      if (adj[i].length !== 2) continue;
-      const hit = nearSeg(xy[i], 4); if (!hit) continue;
-      const [a, b] = segs[hit.k]; if (a === i || b === i || adj[i][0] === a || adj[i][0] === b) continue;
-      link(i, a, dist(xy[i], xy[a]) + 1); link(i, b, dist(xy[i], xy[b]) + 1);
+    // Tiles drop shared points where streets meet or cross: join crossings at street level (not
+    // bridges or tunnels) and reconnect loose ends that stop just short of, or just past, a street.
+    const cut = new Map(); // segment -> points added along it
+    const addOn = (k, p) => { const i = node(p); const l = cut.get(k); l ? l.push(i) : cut.set(k, [i]); return i; };
+    const nseg = segs.length;
+    const cross = (a, b, c, d) => {
+      const rx = b[0] - a[0], ry = b[1] - a[1], sx = d[0] - c[0], sy = d[1] - c[1], den = rx * sy - ry * sx;
+      if (Math.abs(den) < 1e-9) return null;
+      const t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / den, u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / den;
+      return t > 0.001 && t < 0.999 && u > 0.001 && u < 0.999 ? [a[0] + t * rx, a[1] + t * ry] : null;
+    };
+    for (const list of grid.values()) {
+      for (let x = 0; x < list.length; x++) for (let y = x + 1; y < list.length; y++) {
+        const k1 = list[x], k2 = list[y], s1 = segs[k1], s2 = segs[k2];
+        if (k1 >= nseg || k2 >= nseg || s1[2] || s2[2]) continue;
+        if (s1[0] === s2[0] || s1[0] === s2[1] || s1[1] === s2[0] || s1[1] === s2[1]) continue;
+        const p = cross(xy[s1[0]], xy[s1[1]], xy[s2[0]], xy[s2[1]]);
+        if (!p) continue;
+        const i = node(p);
+        if ((cut.get(k1) || []).includes(i)) continue;
+        addOn(k1, p); addOn(k2, p);
+      }
+    }
+    for (let i = 0, n = xy.length; i < n; i++) {
+      if (adj[i].length !== 2) continue; // dead ends only
+      const own = adj[i][0], p = xy[i];
+      let best = null, bd = 12;
+      const seen = new Set();
+      cellsOf(p, p, 12, c => { for (const k of grid.get(c) || []) { if (seen.has(k)) continue; seen.add(k); const [a, b, up] = segs[k]; if (up || a === i || b === i) continue; const d = segDist(p, xy[a], xy[b]); if (d < bd) { bd = d; best = k; } } });
+      if (best == null) continue;
+      const [a, b] = segs[best], A = xy[a], B = xy[b], dx = B[0] - A[0], dy = B[1] - A[1], l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, ((p[0] - A[0]) * dx + (p[1] - A[1]) * dy) / l2)) : 0;
+      const q = [A[0] + t * dx, A[1] + t * dy], j = t <= 0 ? a : t >= 1 ? b : addOn(best, q);
+      if (j !== i && j !== own) link(i, j, bd + 1);
+    }
+    // Split each cut segment through its new points, in order along it.
+    for (const [k, list] of cut) {
+      const [a, b] = segs[k], A = xy[a];
+      const chain = [a, ...[...new Set(list)].sort((m, n) => dist(A, xy[m]) - dist(A, xy[n])), b];
+      for (let z = 1; z < chain.length; z++) if (chain[z] !== chain[z - 1]) link(chain[z - 1], chain[z], dist(xy[chain[z - 1]], xy[chain[z]]));
     }
     const snaps = new Map();
     const snap = p => {
@@ -1382,7 +1417,12 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     const est = (p, q) => dist(p, q) * 1.4 + 60;
     let rows = new Map();
     return {
-      prepare(points, cut) { rows = new Map(); for (const p of points) { const run = from(p, cut); rows.set(p, run ? new Map(points.map(q => [q, reach(run, q)])) : null); } },
+      prepare(points, cut) {
+        rows = new Map(); let lost = 0;
+        for (const p of points) { const run = from(p, cut); const r = run ? new Map(points.map(q => [q, reach(run, q)])) : null; if (r) for (const v of r.values()) if (!isFinite(v)) lost++; rows.set(p, r); }
+        // A badly broken map would send you on wild detours: trust straight lines instead.
+        if (lost > points.length * points.length * 0.25) rows = new Map();
+      },
       d(p, q) {
         if (p === q) return 0;
         const r = rows.get(p);
