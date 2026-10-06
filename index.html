@@ -239,13 +239,45 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
 .rank-pin { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font: 700 14px var(--font-label); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 
+/* Main menu */
+.nav-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn.nav { height: auto; min-height: 76px; padding: 10px 12px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
+.btn.nav b { font-size: 16px; }
+.btn.nav span { font-size: 13px; font-weight: 500; color: var(--muted); text-align: left; }
+.btn.nav[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+/* Event finder */
+.scrollview { overflow: auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+.scrollview > * { flex: none; }
+.scrollview[hidden] { display: none; }
+.rows .erow { grid-template-columns: 1fr auto; }
+.erow .meta, .erow .note { grid-column: 1 / 3; }
+.erow.past { opacity: .6; }
+.band { flex: none; display: inline-block; border-radius: 999px; padding: 3px 10px; font: 700 13px var(--font-label); letter-spacing: .04em; text-transform: uppercase; background: color-mix(in srgb, var(--c) 16%, var(--card)); color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); white-space: nowrap; }
+.bk { font-weight: 600; color: var(--ink); }
+.bk.reserved { color: var(--st-lead); }
+.bk.maybe { color: var(--st-return); }
+.ev-sec { display: flex; flex-direction: column; gap: 6px; }
+.ev-sec h3 { margin: 0; font: 700 13px var(--font-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ev-sec p { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.ev-sec .why li.good::marker { color: var(--st-lead); }
+.ev-sec .why li.bad::marker { color: var(--st-rejected); }
+.ev-sec .why small { color: var(--muted); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 15px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.statuses.three { grid-template-columns: repeat(3, 1fr); }
+.statuses.three button { justify-content: center; text-align: center; padding: 10px 6px; font-size: 14px; }
+.field select.sel { width: 100%; height: 44px; border: 1px solid var(--line); background: var(--paper); border-radius: 10px; padding: 0 10px; font-size: 16px; }
+.ev-pin { width: 28px; height: 28px; border-radius: 8px; background: var(--c); color: #fff; display: grid; place-items: center; font: 700 13px var(--font-label); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.ev-pin.focus { transform: scale(1.3); }
+
 /* Tab bar */
 .tabs {
   display: flex; background: var(--card); border-top: 1px solid var(--line);
-  padding: 6px 16px calc(env(safe-area-inset-bottom, 0px) + 6px); gap: 8px; z-index: 1000;
+  padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 6px); gap: 4px; z-index: 1000;
 }
 .tabs button {
-  flex: 1; border: 0; background: none; border-radius: 10px; padding: 6px 0; display: flex; flex-direction: column;
+  flex: 1; min-width: 0; border: 0; background: none; border-radius: 10px; padding: 6px 0; display: flex; flex-direction: column;
   align-items: center; gap: 2px; color: var(--muted); font: 600 13px var(--font-label); letter-spacing: .06em; text-transform: uppercase;
 }
 .tabs button svg { width: 24px; height: 24px; }
@@ -317,7 +349,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   <div class="topbar-row">
     <h1 class="brand">Canvass<span>Log</span></h1>
     <span class="today" id="todayCount"></span>
-    <button class="icon-btn" id="menuBtn" aria-label="Backup and export">
+    <button class="icon-btn" id="menuBtn" aria-label="Main menu">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
     </button>
   </div>
@@ -380,6 +412,38 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     <ul class="rows" id="rows"></ul>
     </div>
   </section>
+  <section class="view scrollview" id="eventsView" aria-label="Event finder" hidden>
+    <div class="list-tools">
+      <div class="row">
+        <label class="lt"><span class="label">Distance from</span>
+          <select id="evFrom"><option value="me">My location</option><option value="map">Map center</option><option value="set">A place I pick…</option></select>
+        </label>
+        <label class="lt"><span class="label">Within</span>
+          <select id="evRadius"><option value="10">10 miles</option><option value="25">25 miles</option><option value="50">50 miles</option><option value="100">100 miles</option><option value="0">Any distance</option></select>
+        </label>
+      </div>
+      <form class="row" id="evPlaceForm" hidden>
+        <input id="evPlace" type="search" placeholder="Town or address to measure from" aria-label="Place to measure from" enterkeyhint="search">
+        <button class="btn" type="submit" style="flex:none;height:42px">Set</button>
+      </form>
+      <div class="row">
+        <label class="lt"><span class="label">Booking</span>
+          <select id="evStatusFilter"><option value="all">All</option><option value="">No status</option><option value="maybe">Maybe reserve</option><option value="reserved">Reserved</option></select>
+        </label>
+        <label class="lt"><span class="label">Rating</span>
+          <select id="evRateFilter"><option value="all">Any rating</option><option value="good">Good or better</option><option value="noavoid">Hide Avoid</option></select>
+        </label>
+      </div>
+      <label class="lt check"><input type="checkbox" id="evPast"> Show past events</label>
+    </div>
+    <div class="sortbar" id="evSort" role="group" aria-label="Sort events by"></div>
+    <div class="report-actions">
+      <button class="btn" id="evAdd" type="button">Add an event</button>
+      <button class="btn" id="evMap" type="button">Show these on the map</button>
+    </div>
+    <p class="fine" id="evSource"></p>
+    <ul class="rows" id="evRows"></ul>
+  </section>
 </main>
 
 <nav class="tabs" role="tablist">
@@ -387,9 +451,17 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>
     Map
   </button>
-  <button role="tab" id="tabList" aria-selected="false" aria-controls="listView">
+  <button role="tab" id="tabRoutes" aria-selected="false" aria-controls="listView">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h8.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7H16"/></svg>
+    Routes
+  </button>
+  <button role="tab" id="tabEvents" aria-selected="false" aria-controls="eventsView">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="m9.5 15 2 2 3.5-3.5"/></svg>
+    Events
+  </button>
+  <button role="tab" id="tabLog" aria-selected="false" aria-controls="listView">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg>
-    List
+    Log
   </button>
 </nav>
 
@@ -455,20 +527,114 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   <div class="sheet-head">
     <div class="titles">
       <div class="grab"></div>
-      <h2 id="menuTitle">Backup and export</h2>
-      <div class="sub">Your visits are saved on this phone only.</div>
+      <h2 id="menuTitle">Menu</h2>
+      <div class="sub">Everything is saved on this phone only.</div>
     </div>
     <button class="close" data-close aria-label="Close">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
     </button>
   </div>
   <div class="sheet-body menu">
+    <div class="nav-grid">
+      <button class="btn nav" type="button" data-go="map"><b>Live map</b><span>Log visits as you knock</span></button>
+      <button class="btn nav" type="button" data-go="routes"><b>Planned routes</b><span>Find, build and resume walks</span></button>
+      <button class="btn nav" type="button" data-go="events"><b>Event finder</b><span>Booths and tables for leads</span></button>
+      <button class="btn nav" type="button" data-go="log"><b>Visit log</b><span>Reports by date, status, area</span></button>
+    </div>
+    <button class="btn" id="vendorBtn" type="button">Your details for booth requests</button>
+    <span class="label">Backup and export</span>
     <button class="btn" id="exportCsv" type="button">Export spreadsheet (CSV)</button>
     <button class="btn" id="exportJson" type="button">Download backup file</button>
     <button class="btn" id="importJson" type="button">Restore from backup file</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
     <p>Download a backup now and then. Clearing your browser data, or switching phones, removes visits that are only stored here.</p>
   </div>
+</section>
+
+<section class="sheet" id="evSheet" role="dialog" aria-modal="true" aria-labelledby="evTitle" hidden>
+  <div class="sheet-head">
+    <div class="titles">
+      <div class="grab"></div>
+      <h2 id="evTitle">Event</h2>
+      <div class="sub" id="evSub"></div>
+    </div>
+    <button class="close" data-close aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body" id="evBody"></div>
+  <div class="sheet-foot">
+    <button class="btn" id="evOnMapBtn" type="button">Show on map</button>
+    <button class="btn primary" id="evRequest" type="button">Request a booth</button>
+  </div>
+</section>
+
+<section class="sheet" id="evFormSheet" role="dialog" aria-modal="true" aria-labelledby="evFormTitle" hidden>
+  <div class="sheet-head">
+    <div class="titles">
+      <div class="grab"></div>
+      <h2 id="evFormTitle">Add an event</h2>
+      <div class="sub">Fill in what you know. The rating updates as you add the booth price and crowd size.</div>
+    </div>
+    <button class="close" data-close aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <form class="sheet-body" id="evForm" autocomplete="off">
+    <div class="field"><label class="label" for="eName">Event name</label><input id="eName" required autocapitalize="words"></div>
+    <div class="field"><label class="label" for="eType">Kind of event</label><select id="eType" class="sel"></select></div>
+    <div class="two">
+      <div class="field"><label class="label" for="eStart">First day</label><input id="eStart" type="date" required></div>
+      <div class="field"><label class="label" for="eEnd">Last day</label><input id="eEnd" type="date"></div>
+    </div>
+    <div class="field"><label class="label" for="eHours">Hours</label><input id="eHours" placeholder="9 am to 3 pm, setup from 7 am"></div>
+    <div class="field"><label class="label" for="eAddr">Address or venue</label><input id="eAddr" required placeholder="Street address, park or venue and town"></div>
+    <div class="two">
+      <div class="field"><label class="label" for="eFee">Booth price ($)</label><input id="eFee" inputmode="decimal" placeholder="0 if free"></div>
+      <div class="field"><label class="label" for="eCrowd">Expected crowd</label><input id="eCrowd" inputmode="numeric" placeholder="People per day"></div>
+    </div>
+    <div class="field"><label class="label" for="eBooth">Booth size and what's included</label><input id="eBooth" placeholder="10x10, bring your own tent and table"></div>
+    <div class="field"><label class="label" for="eDeadline">Application deadline</label><input id="eDeadline" type="date"></div>
+    <div class="field"><label class="label" for="eLeads">Can vendors collect leads or sell services?</label>
+      <select id="eLeads" class="sel"><option value="">Not sure yet</option><option value="yes">Yes</option><option value="no">No, not allowed</option></select></div>
+    <div class="field"><label class="label" for="eRules">Rules for vendors</label><textarea id="eRules" placeholder="Insurance needed, no amplified sound, stay in your booth..."></textarea></div>
+    <div class="field"><label class="label" for="eOrg">Organizer</label><input id="eOrg" autocapitalize="words"></div>
+    <div class="two">
+      <div class="field"><label class="label" for="eEmail">Organizer email</label><input id="eEmail" type="email" inputmode="email"></div>
+      <div class="field"><label class="label" for="ePhone">Organizer phone</label><input id="ePhone" type="tel" inputmode="tel"></div>
+    </div>
+    <div class="field"><label class="label" for="eWeb">Event website</label><input id="eWeb" type="url" inputmode="url" placeholder="https://"></div>
+    <div class="field"><label class="label" for="eApply">Vendor application link</label><input id="eApply" type="url" inputmode="url" placeholder="https://"></div>
+  </form>
+  <div class="sheet-foot">
+    <button class="btn danger" id="evDelete" type="button" hidden>Delete</button>
+    <button class="btn primary" type="submit" form="evForm">Save event</button>
+  </div>
+</section>
+
+<section class="sheet" id="vendorSheet" role="dialog" aria-modal="true" aria-labelledby="vendorTitle" hidden>
+  <div class="sheet-head">
+    <div class="titles">
+      <div class="grab"></div>
+      <h2 id="vendorTitle">Your details for booth requests</h2>
+      <div class="sub">Used to fill in booth request emails and applications. Kept on this phone.</div>
+    </div>
+    <button class="close" data-close aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <form class="sheet-body" id="vendorForm" autocomplete="on">
+    <div class="field"><label class="label" for="vName">Your name</label><input id="vName" autocomplete="name" autocapitalize="words"></div>
+    <div class="field"><label class="label" for="vBiz">Business name</label><input id="vBiz" autocomplete="organization" autocapitalize="words"></div>
+    <div class="field"><label class="label" for="vWhat">What you offer</label><input id="vWhat" placeholder="Free roof inspections, solar quotes..."></div>
+    <div class="two">
+      <div class="field"><label class="label" for="vPhone">Phone</label><input id="vPhone" type="tel" autocomplete="tel"></div>
+      <div class="field"><label class="label" for="vEmail">Email</label><input id="vEmail" type="email" autocomplete="email"></div>
+    </div>
+    <div class="field"><label class="label" for="vNeeds">Booth needs</label><input id="vNeeds" placeholder="10x10 space, one table, no power needed"></div>
+    <div class="field"><label class="label" for="vBudget">Most you'd pay for a booth ($)</label><input id="vBudget" inputmode="decimal" placeholder="Leave blank for no limit"></div>
+  </form>
+  <div class="sheet-foot"><button class="btn primary" type="submit" form="vendorForm">Save</button></div>
 </section>
 
 <div class="toast" id="toast" role="status" hidden></div>
@@ -592,11 +758,13 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     $('legend').innerHTML = all.map(s => `
       <button class="chip" data-k="${s.key}" aria-pressed="${!hidden.has(s.key)}" style="--c:${s.color}">
         <span class="dot ${s.key === 'planned' ? 'planned' : ''}"></span>${s.label}<span class="n">${counts[s.key] || 0}</span>
-      </button>`).join('');
+      </button>`).join('') + (evOnMap ? '<button class="chip" data-k="events" aria-pressed="true" style="--c:var(--accent)"><span class="dot"></span>Events ✕</button>' : '');
   }
   $('legend').addEventListener('click', e => {
     const b = e.target.closest('.chip'); if (!b) return;
-    const k = b.dataset.k; hidden.has(k) ? hidden.delete(k) : hidden.add(k);
+    const k = b.dataset.k;
+    if (k === 'events') { evOnMap = false; evFocus = null; drawEvents(); legend(); return; }
+    hidden.has(k) ? hidden.delete(k) : hidden.add(k);
     legend(); drawPins();
   });
 
@@ -2352,16 +2520,364 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
 
   planReady = true;
 
-  // ---------- Tabs ----------
+  // ---------- Event finder ----------
+  // Events come from events.json next to the app (refreshed by a weekly web search) plus events you add.
+  // Your booking status, booth number and notes are kept per event on this phone.
+  const EV_TYPES = [
+    { key: 'home_show', label: 'Home, garden or remodeling show', pts: 25, why: 'Home and garden shows draw homeowners who are planning projects' },
+    { key: 'neighborhood', label: 'Neighborhood, HOA or block party', pts: 20, why: 'Neighborhood and HOA events are almost all local homeowners' },
+    { key: 'farmers_market', label: 'Farmers market', pts: 12, why: 'Farmers markets draw local residents, many of them homeowners, week after week' },
+    { key: 'festival', label: 'Community festival or fair', pts: 10, why: 'Community festivals draw local families with time to stop and talk' },
+    { key: 'county_fair', label: 'County or state fair', pts: 6, why: 'Fairs draw big crowds, though many come from out of the area' },
+    { key: 'holiday', label: 'Holiday or seasonal event', pts: 5, why: 'Seasonal events draw local families' },
+    { key: 'craft', label: 'Craft or flea market', pts: 3, why: 'Craft markets draw shoppers looking for goods more than services' },
+    { key: 'business_expo', label: 'Business expo or networking', pts: 0, why: 'Business expos draw business owners more than homeowners' },
+    { key: 'concert_sports', label: 'Concert, sports or nightlife', pts: -15, why: 'Concert, game and nightlife crowds come for the show, not to stop at booths' },
+    { key: 'other', label: 'Something else', pts: 0, why: '' },
+  ];
+  const evType = k => EV_TYPES.find(t => t.key === k) || EV_TYPES[EV_TYPES.length - 1];
+  const BANDS = [
+    { key: 'excellent', label: 'Excellent', min: 80, color: 'var(--st-lead)' },
+    { key: 'good', label: 'Good', min: 65, color: '#1b8a8f' },
+    { key: 'average', label: 'Average', min: 45, color: 'var(--st-return)' },
+    { key: 'poor', label: 'Poor', min: 30, color: '#d9670b' },
+    { key: 'avoid', label: 'Avoid', min: -Infinity, color: 'var(--st-rejected)' },
+  ];
+  const BOOK = { '': 'No status', maybe: 'Maybe reserve', reserved: 'Reserved' };
+  const EV_KEY = 'canvass-log.events', EVS_KEY = 'canvass-log.eventstate', FEED_KEY = 'canvass-log.eventfeed', VENDOR_KEY = 'canvass-log.vendor', EVF_KEY = 'canvass-log.eventfilters';
+  const readJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+  const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { toast('Phone storage is full.'); return false; } };
+  let myEvents = readJSON(EV_KEY, []), evState = readJSON(EVS_KEY, {}), feed = readJSON(FEED_KEY, null), vendor = readJSON(VENDOR_KEY, {});
+  const evf = Object.assign({ from: 'me', radius: '50', status: 'all', rate: 'all', past: false, sort: 'rating', place: null }, readJSON(EVF_KEY, {}));
+  const saveEvf = () => writeJSON(EVF_KEY, evf);
+  let myLoc = null, evOnMap = false, evFocus = null, evOpen = null, feedNote = '';
+  const allEvents = () => [...(feed && Array.isArray(feed.events) ? feed.events : []), ...myEvents].filter(e => e && e.id && e.name);
+  const stOf = id => evState[id] || (evState[id] = {});
+  const saveState = () => writeJSON(EVS_KEY, evState);
+  const usd = n => n == null || n === '' || !isFinite(n) ? '' : +n === 0 ? 'Free' : '$' + (+n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const num = v => v == null || v === '' || !isFinite(+v) ? null : +v;
+  const dayOf = d => d ? new Date(d + (String(d).length <= 10 ? 'T12:00' : '')) : null;
+  const evDays = e => { const a = dayOf(e.start), b = dayOf(e.end || e.start); return a && b ? Math.max(1, Math.round((b - a) / 864e5) + 1) : 1; };
+  const isPast = e => { const b = dayOf(e.end || e.start); return b && b.getTime() + 864e5 < Date.now(); };
+  const fmtWhen = e => {
+    const a = dayOf(e.start), b = dayOf(e.end);
+    if (!a) return e.when || 'Date not set';
+    const o = { weekday: 'short', month: 'short', day: 'numeric' };
+    const one = a.toLocaleDateString(undefined, o);
+    return b && b.toDateString() !== a.toDateString() ? `${one} to ${b.toLocaleDateString(undefined, o)}` : one;
+  };
+  const origin = () => evf.from === 'set' && evf.place ? [evf.place.lat, evf.place.lng] : evf.from === 'me' && myLoc ? myLoc : (c => [c.lat, c.lng])(map.getCenter());
+  const miles = e => isFinite(e.lat) && isFinite(e.lng) ? km(origin(), [e.lat, e.lng]) * 0.621371 : null;
+
+  // Rating: points for who comes, what a booth costs per visitor, the homes around it and the rules.
+  // Every reason says where it came from.
+  function rateEvent(e) {
+    const why = [], add = (pts, text, src) => { score += pts; why.push({ pts, text, src }); };
+    let score = 50;
+    const t = evType(e.type);
+    if (t.why) add(t.pts, t.why, 'Kind of event' + (e.typeSource ? `: ${e.typeSource}` : ''));
+    const fee = num(e.fee), crowd = num(e.attendance), days = evDays(e);
+    const src = e.source ? 'organizer listing' : e.mine ? 'what you entered' : 'event listing';
+    if (fee === 0) add(12, 'The booth is free', src);
+    else if (fee != null && crowd) {
+      const per = fee / (crowd * days);
+      const pts = per < 0.05 ? 18 : per < 0.15 ? 10 : per < 0.4 ? 2 : per < 1 ? -8 : -16;
+      add(pts, `About ${per < 0.01 ? 'under 1¢' : per < 1 ? Math.round(per * 100) + '¢' : '$' + per.toFixed(2)} per visitor (${usd(fee)} for about ${crowd.toLocaleString()} people${days > 1 ? ` a day over ${days} days` : ''})`, crowd && e.attendanceSource ? `crowd from ${e.attendanceSource}` : src);
+    } else if (fee != null) add(fee > 300 ? -6 : 0, `Booth costs ${usd(fee)}; crowd size not known yet`, src);
+    else why.push({ pts: 0, text: 'Booth price not listed; ask the organizer', src });
+    if (crowd != null && crowd < 300) add(-8, `Small crowd (about ${crowd.toLocaleString()}), so few conversations`, e.attendanceSource || src);
+    else if (crowd != null && crowd >= 5000) add(5, `Big crowd (about ${crowd.toLocaleString()}${days > 1 ? ' a day' : ''})`, e.attendanceSource || src);
+    const budget = num(vendor.budget);
+    if (budget != null && fee != null && fee > budget) add(-15, `Over your booth budget of ${usd(budget)}`, 'your details');
+    const c = evState[e.id] && evState[e.id].census;
+    if (c && c.owner != null) {
+      const pct = Math.round(c.owner * 100);
+      add(pct >= 70 ? 10 : pct >= 55 ? 4 : pct < 40 ? -10 : 0, `${pct}% of homes within a mile are owner-occupied${c.income ? `; median household income $${Math.round(c.income / 1000)}k` : ''}`, 'U.S. Census survey');
+    }
+    const mi = miles(e);
+    if (mi != null && mi > 50) add(-8, `${Math.round(mi)} miles away`, 'distance');
+    else if (mi != null && mi > 25) add(-3, `${Math.round(mi)} miles away`, 'distance');
+    if (e.leads === 'no') { why.unshift({ pts: -100, text: 'The organizer does not allow vendors to sell services or collect leads', src: e.leadsSource || src }); score = 0; }
+    else if (e.leads === 'yes') why.push({ pts: 0, text: 'Vendors may collect leads and sell services', src: e.leadsSource || src });
+    else why.push({ pts: 0, text: 'Not yet confirmed that service vendors may collect leads; ask the organizer', src });
+    const band = BANDS.find(b => score >= b.min);
+    return { score: Math.max(0, Math.min(100, Math.round(score))), band, why };
+  }
+
+  // Homeownership around an event, from the Census (cached per event).
+  let censusBusy = false;
+  async function censusFor(list) {
+    if (censusBusy || !navigator.onLine) return;
+    censusBusy = true;
+    try {
+      for (const e of list) {
+        const st = stOf(e.id);
+        if (st.census || !isFinite(e.lat)) continue;
+        try {
+          const { bgs } = await blockGroups([e.lat, e.lng], 1.6);
+          if (!bgs.length) { st.census = { none: 1 }; continue; }
+          const data = await acsReporter(bgs);
+          let occ = 0, own = 0, inc = 0, incW = 0;
+          for (const v of data.values()) { if (v.occupied) { occ += v.occupied; own += v.owner || 0; if (v.income) { inc += v.income * v.occupied; incW += v.occupied; } } }
+          st.census = occ ? { owner: own / occ, income: incW ? inc / incW : null } : { none: 1 };
+          saveState();
+          if (!$('eventsView').hidden) renderEvents();
+          if (evOpen === e.id && openSheetId === 'evSheet') fillEvent(e);
+        } catch { break; }
+      }
+    } finally { censusBusy = false; }
+  }
+
+  async function loadFeed() {
+    try {
+      const r = await fetch('events.json', { cache: 'no-cache' });
+      if (r.status === 404) { feedNote = 'none'; return; }
+      if (!r.ok) throw 0;
+      const j = await r.json();
+      if (j && Array.isArray(j.events)) { feed = j; writeJSON(FEED_KEY, j); feedNote = ''; }
+    } catch { feedNote = 'offline'; }
+  }
+
+  function evFiltered() {
+    const r = +evf.radius;
+    return allEvents().map(e => ({ e, r: rateEvent(e), mi: miles(e), st: evState[e.id] || {} })).filter(x =>
+      (evf.past || !isPast(x.e) || x.st.status === 'reserved') &&
+      (!r || x.mi == null || x.mi <= r) &&
+      (evf.status === 'all' || (x.st.status || '') === evf.status) &&
+      (evf.rate === 'all' || (evf.rate === 'good' ? x.r.score >= 65 : x.r.band.key !== 'avoid')));
+  }
+  const EV_SORTS = [{ key: 'rating', label: 'Rating' }, { key: 'distance', label: 'Distance' }, { key: 'date', label: 'Date' }];
+  function renderEvents() {
+    $('evFrom').value = evf.from; $('evRadius').value = evf.radius; $('evStatusFilter').value = evf.status; $('evRateFilter').value = evf.rate; $('evPast').checked = !!evf.past;
+    $('evPlaceForm').hidden = evf.from !== 'set';
+    if (evf.place && !$('evPlace').value) $('evPlace').value = evf.place.label;
+    $('evSort').innerHTML = '<span class="label">Sort</span>' + EV_SORTS.map(s => `<button type="button" data-k="${s.key}" aria-pressed="${evf.sort === s.key}">${s.label}</button>`).join('');
+    const list = evFiltered();
+    const by = { rating: (a, b) => b.r.score - a.r.score, distance: (a, b) => (a.mi ?? 1e9) - (b.mi ?? 1e9), date: (a, b) => String(a.e.start).localeCompare(String(b.e.start)) }[evf.sort];
+    list.sort((a, b) => by(a, b) || String(a.e.start).localeCompare(String(b.e.start)));
+    const n = allEvents().length;
+    const fromTxt = evf.from === 'me' ? (myLoc ? 'your location' : 'the map center (location not shared yet)') : evf.from === 'set' && evf.place ? evf.place.label.split(',')[0] : 'the map center';
+    $('evSource').textContent = (feed && feed.updated ? `Event list checked ${fmtDate(feed.updated)}${feed.area ? ` for ${feed.area}` : ''}. ` : feedNote === 'offline' ? 'Could not reach the event list; showing what is saved on this phone. ' : 'No weekly event list yet; add events you find and they are rated here. ')
+      + `Distances from ${fromTxt}. Showing ${list.length} of ${n}.`;
+    $('evRows').innerHTML = list.length ? list.map(({ e, r, mi, st }) => `
+      <li><button type="button" class="erow ${isPast(e) ? 'past' : ''}" data-id="${esc(e.id)}">
+        <span class="addr">${esc(e.name)}</span>
+        <span class="band" style="--c:${r.band.color}">${r.band.label}</span>
+        <span class="meta">${esc(fmtWhen(e))}${mi != null ? ` · ${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi` : ''}${e.fee != null && e.fee !== '' ? ` · booth ${esc(usd(e.fee))}` : ''}${e.city ? ` · ${esc(e.city)}` : ''}</span>
+        <span class="meta"><span class="bk ${st.status || ''}">${BOOK[st.status || '']}</span>${st.booth ? ` · booth #${esc(st.booth)}` : ''}${st.requested && st.status !== 'reserved' ? ` · requested ${fmtDate(st.requested)}` : ''}</span>
+        ${st.notes ? `<span class="note">${esc(st.notes)}</span>` : ''}
+      </button></li>`).join('') : `<li class="empty"><strong>No events match</strong>${n ? 'Try a wider distance or a different filter.' : 'Tap “Add an event” to add one you have found.'}</li>`;
+    if (evOnMap) drawEvents();
+    censusFor(list.slice(0, 20).map(x => x.e));
+  }
+  $('evSort').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; evf.sort = b.dataset.k; saveEvf(); renderEvents(); });
+  $('evFrom').addEventListener('change', () => { evf.from = $('evFrom').value; saveEvf(); if (evf.from === 'me') locateMe(); if (evf.from === 'set' && !evf.place) $('evPlace').focus(); renderEvents(); });
+  for (const [id, k] of [['evRadius', 'radius'], ['evStatusFilter', 'status'], ['evRateFilter', 'rate']]) $(id).addEventListener('change', () => { evf[k] = $(id).value; saveEvf(); renderEvents(); });
+  $('evPast').addEventListener('change', () => { evf.past = $('evPast').checked; saveEvf(); renderEvents(); });
+  $('evPlaceForm').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const q = $('evPlace').value.trim(); if (!q) return;
+    try {
+      const [hit] = await search(q);
+      if (!hit) return toast('Could not find that place.');
+      evf.place = { lat: +hit.lat, lng: +hit.lon, label: shortAddress(hit.address, hit.display_name) }; $('evPlace').value = evf.place.label; saveEvf(); renderEvents();
+    } catch { toast('Search is not responding. Try again.'); }
+  });
+  function locateMe() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(p => { myLoc = [p.coords.latitude, p.coords.longitude]; if (!$('eventsView').hidden) renderEvents(); }, () => {}, { timeout: 12000, maximumAge: 300000 });
+  }
+  $('evRows').addEventListener('click', e => { const b = e.target.closest('.erow'); if (b) openEvent(b.dataset.id); });
+
+  // Event details
+  const aLink = (href, text) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(text)}</a>`;
+  const safeUrl = u => /^https?:\/\//i.test(String(u || '')) ? String(u) : '';
+  function fillEvent(e) {
+    const r = rateEvent(e), st = stOf(e.id), mi = miles(e), t = evType(e.type);
+    $('evTitle').textContent = e.name;
+    $('evSub').innerHTML = `${esc(fmtWhen(e))}${mi != null ? ` · ${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi away` : ''} · <span class="band" style="--c:${r.band.color}">${r.band.label}</span>`;
+    const kv = rows => `<dl class="kv">${rows.filter(x => x[1]).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+    const web = safeUrl(e.website), apply = safeUrl(e.applyUrl), source = safeUrl(e.source);
+    const days = evDays(e);
+    $('evBody').innerHTML = `
+      <div class="ev-sec">
+        <h3>Your booking</h3>
+        <div class="statuses three" id="evBook" role="group" aria-label="Booking status">
+          ${Object.entries(BOOK).map(([k, v]) => `<button type="button" data-k="${k}" aria-pressed="${(st.status || '') === k}" style="--c:${k === 'reserved' ? 'var(--st-lead)' : k === 'maybe' ? 'var(--st-return)' : 'var(--st-nocontact)'}">${v}</button>`).join('')}
+        </div>
+        ${st.requested ? `<p class="fine">Booth request prepared ${fmtDate(st.requested)}.</p>` : ''}
+        <div class="two">
+          <div class="field"><label class="label" for="evBoothNo">Booth number</label><input id="evBoothNo" value="${esc(st.booth || '')}"></div>
+          <div class="field"><label class="label" for="evPaid">Paid</label><input id="evPaid" inputmode="decimal" placeholder="$" value="${esc(st.paid || '')}"></div>
+        </div>
+        <div class="field"><label class="label" for="evNotes">Notes</label><textarea id="evNotes" placeholder="Setup time, parking, contact person, what to bring...">${esc(st.notes || '')}</textarea></div>
+      </div>
+      <div class="ev-sec">
+        <h3>Lead rating: ${r.band.label} (${r.score})</h3>
+        <ul class="why">${r.why.map(w => `<li class="${w.pts > 0 ? 'good' : w.pts < 0 ? 'bad' : ''}">${esc(w.text)} <small>(${esc(w.src)})</small></li>`).join('')}</ul>
+        ${st.census ? '' : '<p class="fine">Checking homeownership around it with the Census…</p>'}
+      </div>
+      <div class="ev-sec">
+        <h3>When and where</h3>
+        ${kv([['When', esc(fmtWhen(e)) + (days > 1 ? ` (${days} days)` : '')], ['Hours', esc(e.hours)], ['Setup', esc(e.setup)], ['Repeats', esc(e.repeats)], ['Where', esc([e.venue, e.address].filter(Boolean).join(', '))], ['Kind', esc(t.label)]])}
+      </div>
+      <div class="ev-sec">
+        <h3>Booth or table</h3>
+        ${kv([['Price', esc(usd(e.fee) || 'Not listed')], ['Size', esc(e.booth)], ['Apply by', e.deadline ? esc(dayOf(e.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })) : ''], ['Crowd', num(e.attendance) != null ? `About ${num(e.attendance).toLocaleString()}${days > 1 ? ' a day' : ''}${e.attendanceSource ? ` <small>(${esc(e.attendanceSource)})</small>` : ''}` : ''], ['Who comes', esc(e.audience)]])}
+        ${e.rules ? `<p><b>Rules:</b> ${esc(e.rules)}</p>` : ''}
+      </div>
+      <div class="ev-sec">
+        <h3>Contact and booking</h3>
+        ${kv([['Organizer', esc(e.organizer)], ['Contact', esc(e.contactName)], ['Email', e.email ? aLink('mailto:' + e.email, e.email) : ''], ['Phone', e.phone ? `<a href="tel:${esc(String(e.phone).replace(/[^\d+]/g, ''))}">${esc(e.phone)}</a>` : ''], ['Website', web ? aLink(web, web.replace(/^https?:\/\/(www\.)?/, '').slice(0, 40)) : ''], ['Apply', apply ? aLink(apply, 'Vendor application') : '']])}
+        ${!e.email && !e.phone && !web && !apply ? '<p class="fine">No contact details yet.</p>' : ''}
+      </div>
+      ${e.description ? `<div class="ev-sec"><h3>About</h3><p>${esc(e.description)}</p></div>` : ''}
+      <p class="fine">${source ? `Found on ${aLink(source, source.replace(/^https?:\/\/(www\.)?/, '').split('/')[0])}${e.checked ? `, checked ${fmtDate(dayOf(e.checked))}` : ''}. Confirm dates and prices with the organizer.` : e.mine ? 'You added this event.' : ''}</p>
+      ${e.mine ? '<button class="btn" type="button" id="evEdit">Edit event details</button>' : ''}`;
+    $('evRequest').textContent = st.status === 'reserved' ? 'Contact organizer' : 'Request a booth';
+    $('evRequest').disabled = !e.email && !apply && !e.phone && !web;
+    $('evOnMapBtn').disabled = !isFinite(e.lat);
+  }
+  function openEvent(id) {
+    const e = allEvents().find(x => x.id === id); if (!e) return;
+    evOpen = id; fillEvent(e); showSheet('evSheet');
+    censusFor([e]);
+  }
+  const evSave = () => { saveState(); if (!$('eventsView').hidden) renderEvents(); };
+  $('evBody').addEventListener('click', ev => {
+    const b = ev.target.closest('#evBook button');
+    if (b) { const st = stOf(evOpen); st.status = b.dataset.k; st.updated = Date.now(); evSave(); fillEvent(allEvents().find(x => x.id === evOpen)); return; }
+    if (ev.target.closest('#evEdit')) editEvent(evOpen);
+  });
+  $('evBody').addEventListener('input', ev => {
+    const k = { evBoothNo: 'booth', evPaid: 'paid', evNotes: 'notes' }[ev.target.id]; if (!k || !evOpen) return;
+    stOf(evOpen)[k] = ev.target.value; clearTimeout(evSave.t); evSave.t = setTimeout(evSave, 400);
+  });
+  $('evOnMapBtn').addEventListener('click', () => {
+    const e = allEvents().find(x => x.id === evOpen); if (!e) return;
+    closeSheet(); evOnMap = true; evFocus = e.id; showTab('map'); drawEvents(); legend();
+    map.setView([e.lat, e.lng], Math.max(map.getZoom(), 15));
+  });
+  $('evMap').addEventListener('click', () => {
+    const list = evFiltered().filter(x => isFinite(x.e.lat));
+    if (!list.length) return toast('No events with a location to show.');
+    evOnMap = true; evFocus = null; showTab('map'); drawEvents(); legend();
+    map.fitBounds(list.map(x => [x.e.lat, x.e.lng]), { padding: [40, 40], maxZoom: 15 });
+  });
+  const evLayer = L.layerGroup().addTo(map);
+  function drawEvents() {
+    evLayer.clearLayers(); if (!evOnMap) return;
+    const list = evFiltered();
+    if (evFocus && !list.some(x => x.e.id === evFocus)) { const e = allEvents().find(x => x.id === evFocus); if (e) list.push({ e, r: rateEvent(e) }); }
+    for (const { e, r } of list) {
+      if (!isFinite(e.lat) || !isFinite(e.lng)) continue;
+      const st = evState[e.id] || {};
+      L.marker([e.lat, e.lng], { icon: L.divIcon({ className: '', html: `<div class="ev-pin ${e.id === evFocus ? 'focus' : ''}" style="--c:${r.band.color}">${st.status === 'reserved' ? '✓' : '★'}</div>`, iconSize: [28, 28] }), zIndexOffset: e.id === evFocus ? 1000 : 500 })
+        .bindTooltip(`${esc(e.name)} · ${r.band.label}`, { direction: 'top', offset: [0, -12] })
+        .on('click', () => openEvent(e.id)).addTo(evLayer);
+    }
+  }
+
+  // Booth request: a ready-to-send email, or the organizer's application with your details copied.
+  function requestText(e) {
+    const v = vendor, who = [v.name, v.biz && `with ${v.biz}`].filter(Boolean).join(' ');
+    const body = [
+      `Hi${e.contactName ? ' ' + e.contactName.split(' ')[0] : ''},`, '',
+      `I'd like to reserve a vendor booth at ${e.name} (${fmtWhen(e)}).${who ? ` I'm ${who}${v.what ? `; we offer ${v.what}` : ''}.` : ''}`,
+      v.needs ? `I'd need: ${v.needs}.` : '',
+      `Could you confirm a spot is available${num(e.fee) != null ? ` and that the fee is ${usd(e.fee)}` : ', the booth fee'}, the setup time, and any rules or paperwork for vendors (insurance, permits)?`,
+      '', 'Thank you,', v.name || '', v.biz || '', v.phone || '', v.email || '',
+    ].filter((x, i, a) => x !== '' || a[i - 1] !== '').join('\n').trim();
+    return { subject: `Vendor booth request: ${e.name}, ${fmtWhen(e)}`, body };
+  }
+  $('evRequest').addEventListener('click', async () => {
+    const e = allEvents().find(x => x.id === evOpen); if (!e) return;
+    if (!vendor.name && !vendor.biz) { toast('Add your details first, then tap Request again.'); return openVendor(); }
+    const st = stOf(e.id), { subject, body } = requestText(e), apply = safeUrl(e.applyUrl);
+    if (!st.status) st.status = 'maybe';
+    st.requested = Date.now(); evSave(); fillEvent(e);
+    if (e.email) { location.href = `mailto:${encodeURIComponent(e.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; return; }
+    const details = [vendor.name, vendor.biz, vendor.what, vendor.phone, vendor.email, vendor.needs].filter(Boolean).join('\n');
+    try { await navigator.clipboard.writeText(apply ? details : body); } catch {}
+    if (apply) { toast('Your details are copied. Paste them into the application.'); window.open(apply, '_blank', 'noopener'); }
+    else if (e.phone) location.href = `tel:${String(e.phone).replace(/[^\d+]/g, '')}`;
+    else { toast('Request message copied. Paste it into the website’s contact form.'); window.open(safeUrl(e.website), '_blank', 'noopener'); }
+  });
+
+  // Your details for requests
+  const VF = { vName: 'name', vBiz: 'biz', vWhat: 'what', vPhone: 'phone', vEmail: 'email', vNeeds: 'needs', vBudget: 'budget' };
+  function openVendor() { for (const [id, k] of Object.entries(VF)) $(id).value = vendor[k] || ''; if (openSheetId) closeSheet(); showSheet('vendorSheet'); }
+  $('vendorBtn').addEventListener('click', openVendor);
+  $('vendorForm').addEventListener('submit', ev => {
+    ev.preventDefault();
+    for (const [id, k] of Object.entries(VF)) vendor[k] = $(id).value.trim();
+    writeJSON(VENDOR_KEY, vendor); closeSheet(); toast('Saved'); if (!$('eventsView').hidden) renderEvents();
+  });
+
+  // Add or edit your own events
+  $('eType').innerHTML = EV_TYPES.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('');
+  const EF = { eName: 'name', eType: 'type', eStart: 'start', eEnd: 'end', eHours: 'hours', eAddr: 'address', eFee: 'fee', eCrowd: 'attendance', eBooth: 'booth', eDeadline: 'deadline', eLeads: 'leads', eRules: 'rules', eOrg: 'organizer', eEmail: 'email', ePhone: 'phone', eWeb: 'website', eApply: 'applyUrl' };
+  let editing = null;
+  function editEvent(id) {
+    const e = id ? myEvents.find(x => x.id === id) : null;
+    editing = e ? e.id : null;
+    for (const [fid, k] of Object.entries(EF)) $(fid).value = e && e[k] != null ? e[k] : '';
+    if (!e) $('eType').value = 'festival';
+    $('evFormTitle').textContent = e ? 'Edit event' : 'Add an event';
+    $('evDelete').hidden = !e; $('evDelete').classList.remove('confirm'); $('evDelete').textContent = 'Delete';
+    if (openSheetId) closeSheet();
+    showSheet('evFormSheet');
+  }
+  $('evAdd').addEventListener('click', () => editEvent(null));
+  $('evForm').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const old = editing ? myEvents.find(x => x.id === editing) : null;
+    const e = Object.assign({}, old || { id: 'my-' + uid(), mine: true });
+    for (const [fid, k] of Object.entries(EF)) e[k] = $(fid).value.trim();
+    e.fee = e.fee === '' ? null : num(e.fee.replace(/[$,]/g, ''));
+    e.attendance = e.attendance === '' ? null : num(e.attendance.replace(/[,]/g, ''));
+    if (!old || old.address !== e.address || !isFinite(e.lat)) {
+      try {
+        const [hit] = await search(e.address);
+        if (hit) { e.lat = +hit.lat; e.lng = +hit.lon; e.city = hit.address && (hit.address.city || hit.address.town || hit.address.village) || ''; }
+        else toast('Could not place that address on the map; distance will be missing.');
+      } catch { toast('Could not look up the address; distance will be missing.'); }
+      if (old) delete stOf(e.id).census;
+    }
+    myEvents = old ? myEvents.map(x => x.id === e.id ? e : x) : [...myEvents, e];
+    writeJSON(EV_KEY, myEvents); saveState(); closeSheet(); renderEvents(); openEvent(e.id);
+  });
+  $('evDelete').addEventListener('click', () => {
+    const b = $('evDelete');
+    if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.textContent = 'Tap again to delete'; return; }
+    myEvents = myEvents.filter(x => x.id !== editing); delete evState[editing];
+    writeJSON(EV_KEY, myEvents); saveState(); closeSheet(); renderEvents();
+  });
+
+  // ---------- Tabs and main menu ----------
+  // Map, Routes (plan and walk), Events, Log. Routes and Log share the list view.
+  let tabNow = 'map';
   function showTab(t) {
-    const isMap = t === 'map';
-    $('mapView').hidden = !isMap; $('listView').hidden = isMap;
-    $('tabMap').setAttribute('aria-selected', String(isMap)); $('tabList').setAttribute('aria-selected', String(!isMap));
-    if (isMap) setTimeout(() => map.invalidateSize(), 0);
+    if (t === 'list') t = mode === 'log' ? 'log' : 'routes';
+    if (!['map', 'routes', 'events', 'log'].includes(t)) t = 'map';
+    tabNow = t;
+    $('mapView').hidden = t !== 'map'; $('listView').hidden = t !== 'routes' && t !== 'log'; $('eventsView').hidden = t !== 'events';
+    for (const k of ['map', 'routes', 'events', 'log']) $('tab' + k[0].toUpperCase() + k.slice(1)).setAttribute('aria-selected', String(t === k));
+    document.querySelectorAll('[data-go]').forEach(b => b.setAttribute('aria-current', String(b.dataset.go === t)));
+    $('searchWrap').hidden = t === 'events' || t === 'log';
+    const seg = document.querySelector('#listView > .seg');
+    seg.hidden = t === 'log'; $('segLog').hidden = true; seg.style.gridTemplateColumns = '1fr 1fr';
+    if (t === 'log') listMode('log');
+    else if (t === 'routes' && mode === 'log') listMode(walk ? 'walk' : 'plan');
+    if (t === 'map') setTimeout(() => map.invalidateSize(), 0);
+    if (t === 'events') { if (evf.from === 'me' && !myLoc) locateMe(); renderEvents(); loadFeed().then(() => { if (tabNow === 'events') renderEvents(); }); }
     try { localStorage.setItem('canvass-log.tab', t); } catch {}
   }
   $('tabMap').addEventListener('click', () => showTab('map'));
-  $('tabList').addEventListener('click', () => showTab('list'));
+  $('tabRoutes').addEventListener('click', () => showTab('routes'));
+  $('tabEvents').addEventListener('click', () => showTab('events'));
+  $('tabLog').addEventListener('click', () => showTab('log'));
+  document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSheet(); showTab(b.dataset.go); }));
 
   // ---------- Backup / export ----------
   $('menuBtn').addEventListener('click', () => showSheet('menuSheet'));
