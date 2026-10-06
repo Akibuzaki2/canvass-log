@@ -1126,6 +1126,13 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         if (!t.name || !TILE_ROADS.test(t.class || '')) return;
         tileParts(F.geom).forEach((part, j) => elements.push({ type: 'way', id: `r${x}.${y}.${i}.${j}`, tags: { highway: t.class === 'minor' ? 'residential' : t.class, name: t.name }, geometry: part.map(pt => toLL(tn, pt)) }));
       });
+      const tr = layers.transportation;
+      if (tr) tr.feats.forEach((F, i) => {
+        if (F.type !== 2) return;
+        const t = tagsOf(tr, F);
+        if (/^(motorway|rail|transit|ferry|aerialway|raceway|bus_guideway|busway)$/.test(t.class || '') || t.ramp === 1 || t.ramp === true || t.foot === 'no') return;
+        tileParts(F.geom).forEach((part, j) => elements.push({ type: 'way', id: `w${x}.${y}.${i}.${j}`, tags: { walk: t.class || 'path' }, geometry: part.map(pt => toLL(tr, pt)) }));
+      });
       const bl = layers.building;
       if (bl) bl.feats.forEach((F, i) => tileParts(F.geom).forEach((ring, j) => {
         // Outer rings only (holes wind the other way); one ring is one building.
@@ -1144,7 +1151,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   async function fetchHouses(lat, lng, r) {
     let tiles = null, err = null;
     try { tiles = await tileHouses(lat, lng, r); } catch (e) { err = e; }
-    const homes = tiles ? tiles.elements.filter(e => !e.tags.highway).length : 0;
+    const homes = tiles ? tiles.elements.filter(e => !e.tags.highway && !e.tags.walk).length : 0;
     if (homes >= 15) return tiles;
     try { return await overpassHouses(lat, lng, r); } catch (e) { if (tiles) return tiles; throw err || e; }
   }
@@ -1204,7 +1211,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     const addrPts = [];
     for (const el of data.elements || []) {
       const t = el.tags || {};
-      if (t.highway) continue;
+      if (t.highway || t.walk) continue;
       let lat, lng, area = 0;
       if (el.type === 'node') { lat = el.lat; lng = el.lon; }
       else if (el.geometry && el.geometry.length) { [lat, lng] = centroid(el.geometry); area = polyArea(el.geometry.map(g => P(g.lat, g.lon))); }
@@ -1282,13 +1289,109 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         if (spread < best) { best = spread; home = doors[i].xy; }
       }
     }
-    const cost = h => goal ? dist(h.xy, home) + dist(h.xy, goal) : dist(h.xy, home);
+    let box = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const p of [home, ...(goal ? [goal] : []), ...doors.map(h => h.xy)]) box = [Math.min(box[0], p[0]), Math.min(box[1], p[1]), Math.max(box[2], p[0]), Math.max(box[3], p[1])];
+    box = [box[0] - 400, box[1] - 400, box[2] + 400, box[3] + 400];
+    const net = walkNet(data, P, box);
+    let cost = h => goal ? dist(h.xy, home) + dist(h.xy, goal) : dist(h.xy, home);
+    if (net) {
+      const fromHome = net.all(home, 6000), fromGoal = goal ? net.all(goal, 6000) : null;
+      const walkTo = new Map(doors.map(h => [h, fromHome(h.xy) + (fromGoal ? fromGoal(h.xy) : 0)]));
+      cost = h => walkTo.get(h);
+      // Doors you can only reach by a long detour (across water, a freeway or a rail line) are left out.
+      const reachLimit = goal ? dist(home, goal) * 2 + 2 * (opts.within || r) + 600 : 3 * Math.min(opts.within || r, 1500) + 300;
+      const ok = doors.filter(h => walkTo.get(h) <= reachLimit);
+      if (ok.length >= doors.length * 0.5) doors = ok;
+    }
     if (opts.limit && doors.length > opts.limit) doors = doors.slice().sort((a, b) => cost(a) - cost(b)).slice(0, opts.limit);
-    const sections = loopRoute(doors, streets, home, goal);
-    sections.count = doors.length;
+    const sections = loopRoute(doors, streets, home, goal, net);
+    sections.count = doors.length - (sections.skipped || 0);
     const first = sections[0] && sections[0].houses[0];
     sections.start = opts.pickStart && first ? { lat: first.lat, lng: first.lng } : null;
     return sections;
+  }
+
+  // The walking network: every street and footpath, joined only where lines really meet, so a route
+  // crosses a river or canal only on a bridge. Distances between doors are measured along it.
+  function walkNet(data, P, box) {
+    const ids = new Map(), xy = [], adj = [], segs = [];
+    const node = p => { const k = Math.round(p[0] * 2) + ',' + Math.round(p[1] * 2); let i = ids.get(k); if (i == null) { i = xy.length; ids.set(k, i); xy.push(p); adj.push([]); } return i; };
+    const link = (i, j, d) => { adj[i].push(j, d); adj[j].push(i, d); };
+    const inBox = p => p[0] > box[0] && p[0] < box[2] && p[1] > box[1] && p[1] < box[3];
+    for (const el of data.elements || []) {
+      const t = el.tags || {};
+      const ok = t.walk || (t.highway && !/^(motorway|motorway_link|trunk_link)$/.test(t.highway));
+      if (el.type !== 'way' || !ok || !el.geometry) continue;
+      const pts = el.geometry.map(g => P(g.lat, g.lon));
+      if (!pts.some(inBox)) continue;
+      let prev = null;
+      for (const p of pts) { const i = node(p); if (prev != null && prev !== i) { link(prev, i, dist(xy[prev], xy[i])); segs.push([prev, i]); } prev = i; }
+    }
+    if (segs.length < 3) return null;
+    const C = 40, grid = new Map();
+    const cellsOf = (a, b, pad, fn) => { for (let gx = Math.floor((Math.min(a[0], b[0]) - pad) / C); gx <= Math.floor((Math.max(a[0], b[0]) + pad) / C); gx++) for (let gy = Math.floor((Math.min(a[1], b[1]) - pad) / C); gy <= Math.floor((Math.max(a[1], b[1]) + pad) / C); gy++) fn(gx + ',' + gy); };
+    segs.forEach((sg, k) => cellsOf(xy[sg[0]], xy[sg[1]], 0, c => { const l = grid.get(c); l ? l.push(k) : grid.set(c, [k]); }));
+    const nearSeg = (p, maxD) => {
+      let best = null, bd = maxD;
+      const seen = new Set();
+      cellsOf(p, p, maxD, c => { for (const k of grid.get(c) || []) { if (seen.has(k)) continue; seen.add(k); const [i, j] = segs[k], d = segDist(p, xy[i], xy[j]); if (d < bd) { bd = d; best = k; } } });
+      return best == null ? null : { k: best, d: bd };
+    };
+    // Tiles can drop the shared point where a side street meets a straight road: reconnect loose ends.
+    for (let i = 0; i < xy.length; i++) {
+      if (adj[i].length !== 2) continue;
+      const hit = nearSeg(xy[i], 4); if (!hit) continue;
+      const [a, b] = segs[hit.k]; if (a === i || b === i || adj[i][0] === a || adj[i][0] === b) continue;
+      link(i, a, dist(xy[i], xy[a]) + 1); link(i, b, dist(xy[i], xy[b]) + 1);
+    }
+    const snaps = new Map();
+    const snap = p => {
+      if (snaps.has(p)) return snaps.get(p);
+      const hit = nearSeg(p, 150); let r = null;
+      if (hit) {
+        const [a, b] = segs[hit.k], A = xy[a], B = xy[b], dx = B[0] - A[0], dy = B[1] - A[1], l2 = dx * dx + dy * dy;
+        const t = l2 ? Math.max(0, Math.min(1, ((p[0] - A[0]) * dx + (p[1] - A[1]) * dy) / l2)) : 0, L = Math.sqrt(l2);
+        r = { k: hit.k, a, b, da: hit.d + t * L, db: hit.d + (1 - t) * L };
+      }
+      snaps.set(p, r); return r;
+    };
+    // Dijkstra from a point; stops past `cut` metres.
+    function from(p, cut) {
+      const s0 = snap(p), d = new Map();
+      if (!s0) return null;
+      const heap = [];
+      const push = (n, v) => { heap.push([v, n]); let i = heap.length - 1; while (i) { const q = (i - 1) >> 1; if (heap[q][0] <= heap[i][0]) break; [heap[q], heap[i]] = [heap[i], heap[q]]; i = q; } };
+      const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+      const relax = (n, v) => { if (v < (d.get(n) ?? Infinity)) { d.set(n, v); push(n, v); } };
+      relax(s0.a, s0.da); relax(s0.b, s0.db);
+      while (heap.length) {
+        const [v, n] = pop();
+        if (v > (d.get(n) ?? Infinity) || v > cut) continue;
+        const e = adj[n];
+        for (let k = 0; k < e.length; k += 2) relax(e[k], v + e[k + 1]);
+      }
+      return { s0, d };
+    }
+    const reach = (run, q) => {
+      if (!run) return Infinity;
+      const sq = snap(q); if (!sq) return Infinity;
+      if (sq.k === run.s0.k) return Math.abs(sq.da - run.s0.da) + 0; // same stretch of street
+      return Math.min((run.d.get(sq.a) ?? Infinity) + sq.da, (run.d.get(sq.b) ?? Infinity) + sq.db);
+    };
+    // Walking distance; fall back to a long detour estimate when a door is far from any mapped path.
+    const est = (p, q) => dist(p, q) * 1.4 + 60;
+    let rows = new Map();
+    return {
+      prepare(points, cut) { rows = new Map(); for (const p of points) { const run = from(p, cut); rows.set(p, run ? new Map(points.map(q => [q, reach(run, q)])) : null); } },
+      d(p, q) {
+        if (p === q) return 0;
+        const r = rows.get(p);
+        if (r) { const v = r.get(q); if (v != null) return isFinite(v) ? v : est(p, q) * 4 + 2000; }
+        return est(p, q);
+      },
+      all(p, cut) { const run = from(p, cut); return q => run ? reach(run, q) : est(p, q); },
+      gap(p, q) { const straight = dist(p, q); const run = from(p, straight * 2.5 + 80); return run ? reach(run, q) : straight; },
+    };
   }
 
   const COMPASS = ['east', 'northeast', 'north', 'northwest', 'west', 'southwest', 'south', 'southeast'];
@@ -1298,7 +1401,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
   };
   // One leg is one side of one street, in walking order. The legs are chained into a loop that starts
   // and ends at the start house (where you parked): up one side of a street, back down the other.
-  function loopRoute(doors, streets, home, goal) {
+  function loopRoute(doors, streets, home, goal, net) {
     const finish = goal || home;
     const groups = new Map();
     for (const h of doors) { const g = groups.get(h.street) || []; g.push(h); groups.set(h.street, g); }
@@ -1328,10 +1431,23 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         const list = sides[side].sort((a, b) => a.along - b.along || (parseInt(a.num) || 0) - (parseInt(b.num) || 0));
         let run = [];
         const flush = () => { if (run.length) legs.push({ street: name, side, ax, hs: run }); run = []; };
-        for (const h of list) { if (run.length && dist(run[run.length - 1].xy, h.xy) > 110) flush(); run.push(h); }
+        for (const h of list) {
+          const prev = run[run.length - 1];
+          if (prev && (dist(prev.xy, h.xy) > 110 || (net && net.gap(prev.xy, h.xy) > dist(prev.xy, h.xy) * 2.2 + 60))) flush();
+          run.push(h);
+        }
         flush();
       }
     }
+    // A house or two alone on one side join the other side's stretch: cross for them as you pass.
+    for (const small of legs.filter(l => l.hs.length <= 2)) {
+      const lo = Math.min(...small.hs.map(h => h.along)), hi = Math.max(...small.hs.map(h => h.along));
+      const host = legs.find(l => l !== small && !l.gone && l.street === small.street && l.side !== small.side && l.hs.length > small.hs.length &&
+        lo >= Math.min(...l.hs.map(h => h.along)) - 40 && hi <= Math.max(...l.hs.map(h => h.along)) + 40);
+      if (!host) continue;
+      host.hs = [...host.hs, ...small.hs].sort((a, b) => a.along - b.along); host.both = true; small.gone = true;
+    }
+    legs = legs.filter(l => !l.gone);
     // The leg holding the start house goes first, starting at that house; the rest of that side waits.
     let fixed = null;
     const startH = doors.slice().sort((a, b) => dist(a.xy, home) - dist(b.xy, home))[0];
@@ -1346,32 +1462,36 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     const A = l => l.hs[0].xy, B = l => l.hs[l.hs.length - 1].xy;
     const flip = l => ({ ...l, hs: l.hs.slice().reverse() });
     const from = fixed ? B(fixed) : home;
-    const total = o => { let t = 0, c = from; for (const l of o) { t += dist(c, A(l)); c = B(l); } return t + dist(c, finish); };
-    // Greedy (sometimes taking the second-closest leg on restarts), then 2-opt and or-opt clean-up.
+    if (net) net.prepare([...new Set([from, finish, ...legs.flatMap(l => [A(l), B(l)])])], 8000);
+    const W = net ? (p, q) => net.d(p, q) : dist;
+    // Step cost between legs: the walk between them, plus a nudge to finish a street before starting another.
+    const SWITCH = 45;
+    const E = (p, n) => W(p ? B(p) : from, n ? A(n) : finish) + (p && n && p.street !== n.street ? SWITCH : 0);
+    const total = o => { let t = 0, prev = fixed; for (const l of o) { t += E(prev, l); prev = l; } return t + E(prev, null); };
+    // Greedy (sometimes taking the second-best leg on restarts), then 2-opt and or-opt clean-up.
     let seed = 7;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     function solve(shake) {
       const pool = legs.slice(), order = [];
-      let cur = from;
+      let prev = fixed;
       while (pool.length) {
         const opts2 = [];
-        pool.forEach((l, i) => { opts2.push([dist(cur, A(l)), i, false], [dist(cur, B(l)), i, true]); });
+        pool.forEach((l, i) => { opts2.push([E(prev, l), i, false], [E(prev, flip(l)), i, true]); });
         opts2.sort((x, y) => x[0] - y[0]);
         const pick = shake && opts2.length > 2 && rnd() < 0.3 ? opts2[opts2[1][1] === opts2[0][1] ? 2 : 1] : opts2[0];
         const l = pool.splice(pick[1], 1)[0], o = pick[2] ? flip(l) : l;
-        order.push(o); cur = B(o);
+        order.push(o); prev = o;
       }
-      const endOf = i => i < 0 ? from : B(order[i]);
-      const startOf = i => i >= order.length ? finish : A(order[i]);
+      const before = i => i < 0 ? fixed : order[i], after = i => i >= order.length ? null : order[i];
       for (let round = 0; round < 4; round++) {
         let moved = false;
         // 2-opt: reverse stretches of legs (and flip each one) while the walk gets shorter.
         for (let pass = 0, better = true; better && pass < 30; pass++) {
           better = false;
           for (let i = 0; i < order.length; i++) for (let k = i; k < order.length; k++) {
-            const before = dist(endOf(i - 1), A(order[i])) + dist(B(order[k]), startOf(k + 1));
-            const after = dist(endOf(i - 1), B(order[k])) + dist(A(order[i]), startOf(k + 1));
-            if (after < before - 0.5) { order.splice(i, k - i + 1, ...order.slice(i, k + 1).reverse().map(flip)); better = moved = true; }
+            const was = E(before(i - 1), order[i]) + E(order[k], after(k + 1));
+            const now = E(before(i - 1), flip(order[k])) + E(flip(order[i]), after(k + 1));
+            if (now < was - 0.5) { order.splice(i, k - i + 1, ...order.slice(i, k + 1).reverse().map(flip)); better = moved = true; }
           }
         }
         // Or-opt: move runs of one to three legs to wherever they fit best.
@@ -1392,13 +1512,24 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
     for (let k = 0, tries = legs.length < 60 ? 12 : legs.length < 150 ? 4 : 0; k < tries; k++) {
       const o = solve(true); if (total(o) < total(order) - 0.5) order = o;
     }
+    // Leave out a house or two that cost a long walk out and back for very little.
+    let skipped = 0;
+    for (let again = true; again;) {
+      again = false;
+      for (let i = 0; i < order.length; i++) {
+        const l = order[i]; if (l.hs.length > 2) continue;
+        const p = i ? order[i - 1] : fixed, n = order[i + 1] || null;
+        const detour = E(p, l) + E(l, n) - E(p, n);
+        if (detour > 160 * l.hs.length) { skipped += l.hs.length; order.splice(i, 1); again = true; break; }
+      }
+    }
     // Glue the first leg onto the start house when it simply carries on along the same side.
-    if (fixed && order.length && order[0].street === fixed.street && order[0].side === fixed.side && dist(A(order[0]), B(fixed)) < 110) {
+    if (fixed && order.length && order[0].street === fixed.street && order[0].side === fixed.side && W(A(order[0]), B(fixed)) < 110) {
       fixed = { ...fixed, hs: [...fixed.hs, ...order[0].hs] }; order.shift();
     }
     const all = fixed ? [fixed, ...order] : order;
     const seen = new Set();
-    return all.map(l => {
+    const out = all.map(l => {
       const key = l.street + l.side, cont = seen.has(key); seen.add(key);
       const nums = l.hs.map(h => parseInt(h.num)).filter(n => isFinite(n));
       const odd = nums.filter(n => n % 2).length;
@@ -1407,10 +1538,12 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       const heading = l.hs.length > 1 && dist(a, b) > 15 ? compass(b[0] - a[0], b[1] - a[1], true) : '';
       return {
         street: l.street === 'Other houses' ? 'Other houses' : l.street, cont,
-        side: l.street === 'Other houses' ? '' : `${compass(-l.ax[1] * l.side, l.ax[0] * l.side)} side`, parity, heading,
+        side: l.street === 'Other houses' ? '' : l.both ? 'both sides' : `${compass(-l.ax[1] * l.side, l.ax[0] * l.side)} side`, parity: l.both ? '' : parity, heading,
         houses: l.hs.map(h => ({ id: h.id, lat: h.lat, lng: h.lng, num: h.num, street: h.street === 'Other houses' ? '' : h.street, placeId: h.placeId || null })),
       };
     }).filter(x => x.houses.length);
+    out.skipped = skipped;
+    return out;
   }
 
   const RANGES = { '10-20': [10, 20], '20-50': [20, 50], '50-100': [50, 100], '100+': [100, 300] };
@@ -1425,6 +1558,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
       walk.start.suffix = walk.start.address.split(',').slice(1).join(',').trim();
       let data = await fetchHouses(lat, lng, walk.radius);
       walk.sections = buildRoute(data, walk.start, walk.radius);
+      walk.skipped = walk.sections.skipped || 0;
       if (!walkHouses().length && walk.radius < 600) {
         // Nothing mapped right here: look a bit wider before giving up.
         walk.radius = 600; renderWalk();
@@ -1461,6 +1595,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         sections = buildRoute(data, s0, 1e9, { limit: max, keep, goal: e0, poly: null, within: r, center: mid });
         if (sections.count >= min) break;
       }
+      walk.skipped = sections.skipped || 0;
       walk.sections = [...sections];
       walk.loading = false; walk.error = '';
       const n = walkHouses().length;
@@ -1684,6 +1819,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         <span class="rate">${done} of ${all.length} done</span></div>
       ${all.length && walk.end ? `<p class="park">Start at <b>${esc(startLabel())}</b> and finish at <b>${esc(walk.end.label || 'your end point')}</b> 🏁</p>`
         : all.length && !(walk.plan && walk.plan.kind === 'business') ? `<p class="park">🚗 Park at <b>${esc(startLabel())}</b>. The walk is a loop that ends back there.</p>` : ''}
+      ${walk.skipped ? `<p class="fine">Left out ${walk.skipped} out-of-the-way house${walk.skipped === 1 ? '' : 's'} that would need a long walk for one door.</p>` : ''}
       ${walk.stopAt && done && nxt ? `<p class="park">Picking up where you stopped: <b>${esc(houseLabel(nxt))}</b></p>` : ''}
       ${walk.error ? `<p class="warn">${esc(walk.error)}</p><div class="report-actions"><button class="btn primary" type="button" id="walkRetry">Try again</button></div>` : ''}
       ${!walk.error && !all.length ? `<p class="warn">OpenStreetMap has no houses mapped within ${walk.radius} m of here. Try a bigger distance, or tap houses on the map to add them.</p>` : ''}
@@ -2067,6 +2203,7 @@ p.fine { margin: 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
         keep: p => !p || !(p.status === 'rejected' || p.status === 'lead' || (p.history?.length && p.status !== 'return' && p.status !== 'nocontact' && Date.now() - p.history.at(-1).t < 30 * 864e5)),
       });
       const st = walk.sections.start;
+      walk.skipped = walk.sections.skipped || 0;
       walk.sections = [...walk.sections];
       if (st) {
         walk.start.lat = st.lat; walk.start.lng = st.lng;
