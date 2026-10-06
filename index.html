@@ -1420,7 +1420,9 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     for (const el of data.elements || []) {
       const t = el.tags || {};
       if (el.type === 'way' && t.highway && t.name && el.geometry) {
-        const s = streets.get(t.name) || { name: t.name, pts: [], segs: [] };
+        const s = streets.get(t.name) || { name: t.name, pts: [], segs: [], lane: true };
+        // Alleys and service lanes run behind the houses: doors face the street out front.
+        if (!(t.highway === 'service' || t.service === 'alley' || /\balley\b/i.test(t.name))) s.lane = false;
         const xy = el.geometry.map(g => P(g.lat, g.lon));
         xy.forEach((p, i) => { s.pts.push(p); if (i) s.segs.push([xy[i - 1], p]); });
         streets.set(t.name, s);
@@ -1465,7 +1467,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       let best = null, bd = 80;
       const near = new Map();
       for (const s of streets.values()) for (const [a, b] of s.segs) {
-        const d = segDist(h.xy, a, b);
+        const d = segDist(h.xy, a, b) + (s.lane ? 60 : 0);
         if (d < bd) { bd = d; best = s; }
         if (d < 60 && !(near.get(s) <= d)) near.set(s, d);
       }
