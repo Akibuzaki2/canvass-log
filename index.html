@@ -1629,12 +1629,6 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (deg === 2 || deg === 0) continue;
       const c = Math.floor(xy[i][0] / C) + ',' + Math.floor(xy[i][1] / C), l = jgrid.get(c); l ? l.push(i) : jgrid.set(c, [i]);
     }
-    const junction = (p, maxD) => {
-      let best = null, bd = maxD;
-      for (let gx = Math.floor((p[0] - maxD) / C); gx <= Math.floor((p[0] + maxD) / C); gx++) for (let gy = Math.floor((p[1] - maxD) / C); gy <= Math.floor((p[1] + maxD) / C); gy++)
-        for (const i of jgrid.get(gx + ',' + gy) || []) { const d = dist(p, xy[i]); if (d < bd) { bd = d; best = i; } }
-      return best == null ? null : xy[best];
-    };
     const snaps = new Map();
     const snap = p => {
       if (snaps.has(p)) return snaps.get(p);
@@ -1688,7 +1682,6 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         return est(p, q);
       },
       all(p, cut) { const run = from(p, cut); return q => run ? reach(run, q) : est(p, q); },
-      junction,
       // The streets and paths between two points, as a list of points (never a straight cut between them).
       path(p, q) {
         const sp = snap(p), sq = snap(q);
@@ -1700,6 +1693,23 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         const nodes = [];
         for (let n = ea <= eb ? sq.a : sq.b, guard = 0; n != null && n !== -1 && guard < 20000; n = run.prev.get(n), guard++) nodes.push(n);
         return [sp.pt, ...nodes.reverse().map(i => xy[i]), sq.pt];
+      },
+      // Cross from one side of a street to the other at the corner (or dead end) that makes the
+      // shortest walk, measured along the paths, not as the crow flies.
+      crossVia(p, q, maxD) {
+        const sp = snap(p), sq = snap(q);
+        if (!sp || !sq) return null;
+        const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], cands = [];
+        for (let gx = Math.floor((m[0] - maxD) / C); gx <= Math.floor((m[0] + maxD) / C); gx++) for (let gy = Math.floor((m[1] - maxD) / C); gy <= Math.floor((m[1] + maxD) / C); gy++)
+          for (const i of jgrid.get(gx + ',' + gy) || []) if (dist(m, xy[i]) <= maxD) cands.push(i);
+        if (!cands.length) return null;
+        const rp = from(p, maxD * 3 + 200), rq = from(q, maxD * 3 + 200);
+        let best = null, bc = Infinity;
+        for (const i of cands) { const c = (rp.d.get(i) ?? Infinity) + (rq.d.get(i) ?? Infinity); if (c < bc) { bc = c; best = i; } }
+        if (best == null || !isFinite(bc)) return null;
+        const chain = (run, i) => { const out = []; for (let n = i, g = 0; n != null && n !== -1 && g < 20000; n = run.prev.get(n), g++) out.push(n); return out.reverse(); };
+        const a = chain(rp, best), b = chain(rq, best).reverse();
+        return { cost: bc, line: [sp.pt, ...a.map(i => xy[i]), ...b.slice(1).map(i => xy[i]), sq.pt] };
       },
       gap(p, q) { const straight = dist(p, q); const run = from(p, straight * 2.5 + 80); return run ? reach(run, q) : straight; },
     };
@@ -1777,7 +1787,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const W = net ? (p, q) => net.d(p, q) : dist;
     // Step cost between legs: the walk between them, plus a nudge to finish a street before starting another.
     const SWITCH = 45;
-    const crossAt = (a, b) => { if (!net) return 0; const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], j = net.junction(m, 250); return j ? dist(a, j) + dist(j, b) - dist(a, b) : 120; };
+    const crossAt = (a, b) => { if (!net) return 0; const v = net.crossVia(a, b, 250); return v ? Math.max(0, v.cost - W(a, b)) : 120; };
     const crossCache = new Map();
     const XC = (p, n) => { if (!p || !n || p.street !== n.street || p.side === n.side || p.street === 'Other houses') return 0; const k = p.street + p.side + B(p) + A(n); if (!crossCache.has(k)) crossCache.set(k, crossAt(B(p), A(n))); return crossCache.get(k); };
     const E = (p, n) => W(p ? B(p) : from, n ? A(n) : finish) + (p && n && p.street !== n.street ? SWITCH : XC(p, n));
@@ -1875,10 +1885,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const lines = [];
       const go = (p, q, sameStreetSwitch) => {
         if (!p || !q) return null;
-        if (sameStreetSwitch) {
-          const j = net.junction([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], 250);
-          if (j) { const a = net.path(p, j), b = net.path(j, q); if (a && b) return [...a, ...b.slice(1)]; }
-        }
+        if (sameStreetSwitch) { const v = net.crossVia(p, q, 250); if (v) return v.line; }
         return net.path(p, q);
       };
       let at = home, prevLeg = null;
