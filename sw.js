@@ -1,5 +1,5 @@
 // Keeps the app opening when signal is weak: app files come from cache when the network fails.
-const CACHE = 'canvass-log-v3';
+const CACHE = 'canvass-log-v3b';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'apple-touch-icon.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

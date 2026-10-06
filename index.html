@@ -957,7 +957,23 @@ main { flex: 1; min-height: 0; position: relative; }
   try { walk = JSON.parse(localStorage.getItem(WALK_KEY)); if (walk && walk.loading) walk = null; } catch {}
   function saveWalk() { try { walk ? localStorage.setItem(WALK_KEY, JSON.stringify(walk)) : localStorage.removeItem(WALK_KEY); } catch {} }
 
-  const OVERPASS = 'https://overpass-api.de/api/interpreter';
+  // The main Overpass server is often overloaded, so fall back to public mirrors.
+  const OVERPASS_SERVERS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  async function overpass(q) {
+    let last = 'no response';
+    for (const url of OVERPASS_SERVERS) {
+      try {
+        const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 30000);
+        const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctl.signal });
+        clearTimeout(timer);
+        if (!res.ok) { last = `server busy (${res.status})`; continue; }
+        const j = await res.json();
+        if (j.remark && /timed out|out of memory|rate_limited/i.test(j.remark) && !(j.elements || []).length) { last = 'server busy'; continue; }
+        return j;
+      } catch (e) { last = e && e.name === 'AbortError' ? 'timed out' : 'no connection'; }
+    }
+    throw new Error(last);
+  }
   const HOUSE_TYPES = 'house|detached|residential|semidetached_house|terrace|bungalow|yes';
   const ROAD_TYPES = 'residential|living_street|unclassified|tertiary|secondary|primary|service|road';
   async function fetchHouses(lat, lng, r) {
@@ -967,9 +983,7 @@ main { flex: 1; min-height: 0; position: relative; }
       way["building"~"^(${HOUSE_TYPES})$"](around:${r},${lat},${lng});
       way["highway"~"^(${ROAD_TYPES})$"]["name"](around:${r + 150},${lat},${lng});
     );out tags geom;`;
-    const res = await fetch(OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-    if (!res.ok) throw new Error('overpass ' + res.status);
-    return res.json();
+    return overpass(q);
   }
 
   // Flat x/y in meters around the start point; plenty accurate over a few hundred meters.
@@ -1101,13 +1115,20 @@ main { flex: 1; min-height: 0; position: relative; }
         try { const r = await reverse(lat, lng); walk.start.address ||= r.address; walk.start.area ||= r.area; } catch {}
       }
       walk.start.suffix = walk.start.address.split(',').slice(1).join(',').trim();
-      const data = await fetchHouses(lat, lng, walk.radius);
+      let data = await fetchHouses(lat, lng, walk.radius);
       walk.sections = buildRoute(data, walk.start, walk.radius);
+      if (!walkHouses().length && walk.radius < 600) {
+        // Nothing mapped right here: look a bit wider before giving up.
+        walk.radius = 600; renderWalk();
+        data = await fetchHouses(lat, lng, walk.radius);
+        walk.sections = buildRoute(data, walk.start, walk.radius);
+      }
       walk.loading = false; walk.error = '';
       const n = walkHouses().length;
       toast(n ? `${n} houses on ${new Set(walk.sections.map(s => s.street)).size} streets` : 'No houses found nearby');
-    } catch {
-      walk.loading = false; walk.error = 'Could not load houses. Check your signal and try again.';
+    } catch (e) {
+      walk.loading = false;
+      walk.error = `Could not load houses from OpenStreetMap (${(e && e.message) || 'unknown error'}). Tap Try again.`;
     }
     saveWalk(); renderWalk(); drawWalk();
     const pts = walkHouses().map(h => [h.lat, h.lng]);
@@ -1208,8 +1229,8 @@ main { flex: 1; min-height: 0; position: relative; }
     const head = `<div class="report">
       <div class="report-head"><h2>From ${esc(walk.start.address.split(',')[0] || 'your location')}</h2>
         <span class="rate">${done} of ${all.length} done today</span></div>
-      ${walk.error ? `<p class="warn">${esc(walk.error)}</p>` : ''}
-      ${!walk.error && !all.length ? `<p class="warn">OpenStreetMap has no houses mapped here. Try a bigger distance, or tap houses on the map.</p>` : ''}
+      ${walk.error ? `<p class="warn">${esc(walk.error)}</p><div class="report-actions"><button class="btn primary" type="button" id="walkRetry">Try again</button></div>` : ''}
+      ${!walk.error && !all.length ? `<p class="warn">OpenStreetMap has no houses mapped within ${walk.radius} m of here. Try a bigger distance, or tap houses on the map to add them.</p>` : ''}
       <div class="bar" aria-hidden="true"><span style="--c:var(--st-lead);flex:${done}"></span><span style="--c:var(--line);flex:${all.length - done}"></span></div>
       <div class="list-tools"><div class="row">
         <label class="lt"><span class="label">Distance</span>
@@ -1238,6 +1259,7 @@ main { flex: 1; min-height: 0; position: relative; }
     }).join('');
     el.innerHTML = head + `<ul class="rows walk-rows">${body}</ul>`;
     $('walkRadius').onchange = e => { walk.radius = +e.target.value; startWalk(walk.start.lat, walk.start.lng, walk.start.address, walk.start.area); };
+    if ($('walkRetry')) $('walkRetry').onclick = () => startWalk(walk.start.lat, walk.start.lng, walk.start.address, walk.start.area);
     $('walkHide').onchange = e => { walk.hideDone = e.target.checked; saveWalk(); renderWalk(); };
     $('walkNext').onclick = () => goNext(null);
     $('walkMap').onclick = () => { showTab('map'); const pts = all.map(h => [h.lat, h.lng]); if (pts.length) map.fitBounds(pts, { maxZoom: 18, padding: [30, 30] }); };
