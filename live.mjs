@@ -28,10 +28,21 @@ for (const [name, [lat, lng]] of Object.entries(PLACES)) {
   const warn = await page.$$eval('#walkPanel .warn', a => a.map(x => x.textContent)); if (warn.length) console.log('WARN', warn);
   await page.screenshot({ path: `${name}-list.png`, fullPage: false });
   console.log('hosts:', JSON.stringify(hosts), 'errors:', errs);
+  if (name === 'boulder') {
+    await page.click('#walkEnd'); await page.click('#walkEnd');
+    await page.evaluate(([lat, lng]) => localStorage.setItem('canvass-log.builder', JSON.stringify({ start: { lat, lng, label: 'Start' }, end: { lat: lat + 0.004, lng: lng + 0.004, label: 'End' }, range: '20-50' })), [lat, lng]);
+    await page.reload(); await page.waitForTimeout(1200); await page.click('#tabList'); await page.click('#segWalk');
+    const t2 = Date.now(); await page.click('#rbGo');
+    await page.waitForFunction(() => !/Finding houses/.test(document.getElementById('walkbar').textContent), null, { timeout: 120000 }).catch(() => {});
+    console.log(`A to B 20-50 in ${Date.now() - t2} ms:`, (await page.$$eval('#walkPanel li.street', a => a.map(x => x.textContent.replace(/\s+/g, ' ').trim()))).join(' | '));
+    await page.click('#tabMap'); await page.waitForTimeout(800); await page.screenshot({ path: 'boulder-atob.png' });
+  }
   if (name === 'chandler_az') {
     await page.click('#segPlan'); await page.waitForTimeout(300);
     await page.click('#planGo');
-    await page.waitForFunction(() => !document.getElementById('planGo').disabled, null, { timeout: 120000 }).catch(() => {});
+    await page.waitForTimeout(1000);
+    await page.waitForFunction(() => document.getElementById('planGo') && !document.getElementById('planGo').disabled, null, { timeout: 150000 }).catch(() => console.log('plan timed out'));
+    console.log('PLAN panel:', (await page.textContent('#planPanel')).replace(/\s+/g, ' ').slice(0, 900));
     const cards = await page.$$eval('.plan-card', a => a.map(x => x.textContent.replace(/\s+/g, ' ').trim().slice(0, 200)));
     console.log('PLAN cards:', cards.length, '\n  ' + cards.join('\n  '));
     const w = await page.$$eval('#planPanel .warn', a => a.map(x => x.textContent)); if (w.length) console.log('PLAN WARN', w);
