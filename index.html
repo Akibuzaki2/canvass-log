@@ -2118,12 +2118,24 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('walkPanel').querySelectorAll('[data-range]').forEach(b => b.onclick = () => { rb.range = b.dataset.range; saveRb(); renderWalk(); });
     $('rbGo').onclick = () => startWalk(rb.start.lat, rb.start.lng, rb.start.label === 'My location' || rb.start.label === 'Middle of the map' ? '' : rb.start.label, '', { range: rb.range, end: rb.end ? { ...rb.end } : null });
   }
+  // Walking length of a route: the street line plus the walk up to each door and back.
+  function routeMiles(w) {
+    if (!w || !w.sections || !w.sections.some(s => s.path)) return null;
+    const m = (a, b) => { const kx = Math.cos(a[0] * Math.PI / 180) * 111320; return Math.hypot((b[0] - a[0]) * 110540, (b[1] - a[1]) * kx); };
+    let t = 0;
+    for (const s of w.sections) {
+      for (const line of s.path || []) for (let i = 1; i < line.length; i++) t += m(line[i - 1], line[i]);
+      for (const h of s.houses) if (h.curb) t += 2 * m(h.curb, [h.lat, h.lng]);
+    }
+    return t / 1609.344;
+  }
+  const milesText = mi => mi == null ? '' : `${mi < 0.95 ? mi.toFixed(2).replace(/0$/, '') : mi.toFixed(1)} mi walk`;
   function savedHtml() {
     if (!routes.length) return '';
     return `<div class="report"><div class="report-head"><h2>Saved routes</h2></div>
       <ul class="rows saved">${routes.map(r => {
         const hs = r.sections.flatMap(x => x.houses), d = (r.doneIds || []).length;
-        return `<li class="saved-row"><div class="saved-text"><b>${esc(r.name || 'Route')}</b><span class="sub">${d} of ${hs.length} done${r.worked ? ` · last worked ${fmtDate(r.worked)}` : ''}</span></div>
+        return `<li class="saved-row"><div class="saved-text"><b>${esc(r.name || 'Route')}</b><span class="sub">${d} of ${hs.length} done${routeMiles(r) != null ? ` · ${milesText(routeMiles(r))}` : ''}${r.worked ? ` · last worked ${fmtDate(r.worked)}` : ''}</span></div>
           <button class="btn primary" type="button" data-open="${esc(r.id)}">${d ? 'Resume' : 'Open'}</button>
           <button class="btn" type="button" data-del="${esc(r.id)}" aria-label="Delete">✕</button></li>`;
       }).join('')}</ul></div>`;
@@ -2165,6 +2177,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const head = `<div class="report">
       <div class="report-head"><h2>${walk.plan ? esc((walk.plan.kind === 'business' ? 'Business route: ' : 'Planned: ') + walk.plan.title) : `From ${esc(walk.start.address.split(',')[0] || 'your location')}`}</h2>
         <span class="rate">${done} of ${all.length} done</span></div>
+      ${all.length && routeMiles(walk) != null ? `<p class="park">📏 Route length: <b>${milesText(routeMiles(walk)).replace(' walk', '')}</b>, about ${Math.max(1, Math.round(routeMiles(walk) * 20))} min of walking plus time at doors.</p>` : ''}
       ${all.length && walk.end ? `<p class="park">Start at <b>${esc(startLabel())}</b> and finish at <b>${esc(walk.end.label || 'your end point')}</b> 🏁</p>`
         : all.length && !(walk.plan && walk.plan.kind === 'business') ? `<p class="park">🚗 Park at <b>${esc(startLabel())}</b>. The walk is a loop that ends back there.</p>` : ''}
       ${walk.skipped ? `<p class="fine">Left out ${walk.skipped} out-of-the-way house${walk.skipped === 1 ? '' : 's'} that would need a long walk for one door.</p>` : ''}
