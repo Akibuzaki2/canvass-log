@@ -466,6 +466,18 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .wrap-step .btn { flex: none; }
 @media (prefers-reduced-motion: reduce) { .btn:active, .flow:active, .rows li > button:active { transform: none; } }
 
+
+/* Map pins */
+.leaflet-marker-icon.pin { background: none; border: 0; }
+.pin-svg { display: block; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.35)); }
+.chip .pin-svg { filter: none; flex: none; }
+.pin.cluster svg { display: block; filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
+.wdot { display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 2.5px var(--st-planned), 0 1px 2px rgba(0,0,0,.25); }
+.wdot.done { opacity: .5; }
+.nextnum { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #1d2a3a; color: #fff; font: 700 14px/1 var(--font-label); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.nextnum.first { background: var(--accent); color: #fff; width: 26px; height: 26px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent), 0 1px 4px rgba(0,0,0,.35); }
+.arrow { display: block; width: 12px; height: 12px; background: no-repeat center / 12px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 2.5 8 6l-5 3.5' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+
 /* Menu */
 .menu { display: flex; flex-direction: column; gap: 10px; }
 .menu .btn { text-align: left; }
@@ -923,28 +935,83 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   const hidden = new Set();
   let tempMarker = null, meMarker = null;
 
+  // Pins carry a shape and a mark as well as a color, so they read in bright sun and for color blindness:
+  // lead = circle with a check, rejected = square with an X, return later = diamond with a clock hand,
+  // no contact = circle with a dash, not visited = hollow dashed ring.
+  const PIN_MARK = { lead: 'M-3.2 0l2.2 2.3 4.2-4.6', rejected: 'M-2.7-2.7l5.4 5.4M2.7-2.7l-5.4 5.4', return: 'M0-3.2V0l2.2 1.5', nocontact: 'M-3 0h6' };
+  function pinSvg(key, size = 22) {
+    const c = cssVar(statusOf(key).color), h = size / 2;
+    const shape = key === 'planned' ? `<circle r="6.5" fill="#fff" stroke="${c}" stroke-width="2.6" stroke-dasharray="3 2"/>`
+      : key === 'rejected' ? `<rect x="-8" y="-8" width="16" height="16" rx="3.5" fill="${c}" stroke="#fff" stroke-width="2"/>`
+      : key === 'return' ? `<path d="M0-10 9.5 0 0 10-9.5 0Z" fill="${c}" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>`
+      : `<circle r="8.6" fill="${c}" stroke="#fff" stroke-width="2"/>`;
+    const mark = PIN_MARK[key] ? `<path d="${PIN_MARK[key]}" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>` : '';
+    return `<svg class="pin-svg" width="${size}" height="${size}" viewBox="-11 -11 22 22" aria-hidden="true">${shape}${mark}</svg>`;
+  }
+  const pinIcon = key => L.divIcon({ className: 'pin', html: pinSvg(key), iconSize: [22, 22], iconAnchor: [11, 11] });
+
+  // Zoomed out, pins within a finger's width of each other merge into one bubble: the count, ringed by the
+  // outcome mix. From street level (zoom 17) every door is its own pin again.
+  const CLUSTER_UNTIL = 17, CLUSTER_PX = 46;
+  function clusterIcon(list) {
+    const n = list.length, R = n >= 100 ? 24 : n >= 20 ? 20 : 17, size = (R + 3) * 2, by = {};
+    list.forEach(p => { const k = statusOf(p.status).key; by[k] = (by[k] || 0) + 1; });
+    let a0 = -Math.PI / 2, arcs = '';
+    for (const k of ORDER) {
+      if (!by[k]) continue;
+      const frac = by[k] / n, a1 = a0 + frac * 2 * Math.PI, col = cssVar(statusOf(k).color);
+      arcs += frac >= 1 ? `<circle r="${R}" fill="${col}"/>`
+        : `<path d="M0 0L${(R * Math.cos(a0)).toFixed(2)} ${(R * Math.sin(a0)).toFixed(2)}A${R} ${R} 0 ${frac > .5 ? 1 : 0} 1 ${(R * Math.cos(a1)).toFixed(2)} ${(R * Math.sin(a1)).toFixed(2)}Z" fill="${col}"/>`;
+      a0 = a1;
+    }
+    const html = `<svg width="${size}" height="${size}" viewBox="${-size / 2} ${-size / 2} ${size} ${size}" aria-hidden="true"><circle r="${R + 2.5}" fill="#fff"/>${arcs}<circle r="${R * .6}" fill="#fff"/><text y="${R > 17 ? 4.5 : 4}" text-anchor="middle" font-size="${R > 17 ? 13 : 11}" font-weight="700" fill="#1d2a3a" font-family="Barlow, system-ui, sans-serif">${n > 999 ? '999+' : n}</text></svg>`;
+    return L.divIcon({ className: 'pin cluster', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+  }
+
   function drawPins() {
     pinLayer.clearLayers();
-    for (const p of places) {
-      const s = statusOf(p.status);
-      if (hidden.has(s.key)) continue;
-      const planned = s.key === 'planned';
-      const m = L.circleMarker([p.lat, p.lng], {
-        radius: 10, weight: planned ? 3 : 2.5, color: planned ? cssVar(s.color) : '#ffffff',
-        fillColor: planned ? '#ffffff' : cssVar(s.color), fillOpacity: 1, bubblingMouseEvents: false,
-      });
+    const shown = places.filter(p => !hidden.has(statusOf(p.status).key));
+    const z = map.getZoom();
+    let groups = shown.map(p => [p]);
+    if (z < CLUSTER_UNTIL && shown.length > 1) {
+      // Grid pass in screen pixels, then merge neighbouring cells so a group never splits across a cell edge.
+      const cells = new Map();
+      for (const p of shown) {
+        const pt = map.project([p.lat, p.lng], z), key = `${Math.floor(pt.x / CLUSTER_PX)}:${Math.floor(pt.y / CLUSTER_PX)}`;
+        const c = cells.get(key) || { pts: [], x: 0, y: 0 }; c.pts.push(p); c.x += pt.x; c.y += pt.y; cells.set(key, c);
+      }
+      const list = [...cells.values()].map(c => ({ pts: c.pts, x: c.x / c.pts.length, y: c.y / c.pts.length }));
+      for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j];
+        if (!a.pts.length || !b.pts.length || Math.hypot(a.x - b.x, a.y - b.y) > CLUSTER_PX) continue;
+        const n = a.pts.length + b.pts.length;
+        a.x = (a.x * a.pts.length + b.x * b.pts.length) / n; a.y = (a.y * a.pts.length + b.y * b.pts.length) / n;
+        a.pts.push(...b.pts); b.pts = [];
+      }
+      groups = list.filter(c => c.pts.length).map(c => c.pts);
+    }
+    for (const g of groups) {
+      if (g.length > 1) {
+        const lat = g.reduce((t, p) => t + p.lat, 0) / g.length, lng = g.reduce((t, p) => t + p.lng, 0) / g.length;
+        L.marker([lat, lng], { icon: clusterIcon(g), keyboard: false })
+          .on('click', () => map.fitBounds(L.latLngBounds(g.map(p => [p.lat, p.lng])), { padding: [50, 50], maxZoom: CLUSTER_UNTIL }))
+          .bindTooltip(`${g.length} doors · tap to zoom in`, { direction: 'top', offset: [0, -14] }).addTo(pinLayer);
+        continue;
+      }
+      const p = g[0], m = L.marker([p.lat, p.lng], { icon: pinIcon(statusOf(p.status).key), keyboard: false });
       m.on('click', () => openSheet(p.id));
-      m.bindTooltip(esc(p.biz ? `${p.biz} · ${p.address}` : p.address), { direction: 'top', offset: [0, -8] });
+      m.bindTooltip(esc(p.biz ? `${p.biz} · ${p.address}` : p.address), { direction: 'top', offset: [0, -10] });
       m.addTo(pinLayer);
     }
   }
+  map.on('zoomend', () => drawPins());
 
   function legend() {
     const counts = {}; places.forEach(p => { const k = statusOf(p.status).key; counts[k] = (counts[k] || 0) + 1; });
     const all = [...STATUSES, PLANNED];
     $('legend').innerHTML = all.map(s => `
       <button class="chip" data-k="${s.key}" aria-pressed="${!hidden.has(s.key)}" style="--c:${s.color}">
-        <span class="dot ${s.key === 'planned' ? 'planned' : ''}"></span>${s.label}<span class="n">${counts[s.key] || 0}</span>
+        ${pinSvg(s.key, 16)}${s.label}<span class="n">${counts[s.key] || 0}</span>
       </button>`).join('') + (evOnMap ? '<button class="chip" data-k="events" aria-pressed="true" style="--c:var(--accent)"><span class="dot"></span>Events ✕</button>' : '');
   }
   $('legend').addEventListener('click', e => {
@@ -2437,29 +2504,55 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 
   // Map: route line, unvisited houses as hollow dots, the next door ringed in orange.
   const walkLayer = L.layerGroup().addTo(map);
+  // Small arrowheads every `every` metres along a line, turned to point along it.
+  function arrowsAlong(line, every) {
+    const m = (a, b) => Math.hypot((b[0] - a[0]) * 110540, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180));
+    let carry = every / 2;
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1], b = line[i], d = m(a, b);
+      if (!d) continue;
+      const deg = Math.atan2(-(b[0] - a[0]) * 110540, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180)) * 180 / Math.PI;
+      for (let t = carry; t < d; t += every) {
+        const f = t / d, at = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+        L.marker(at, { icon: L.divIcon({ className: 'pin', html: `<span class="arrow" style="transform:rotate(${deg.toFixed(0)}deg)"></span>`, iconSize: [12, 12], iconAnchor: [6, 6] }), interactive: false, keyboard: false }).addTo(walkLayer);
+      }
+      carry = (carry - d) % every; if (carry < 0) carry += every;
+    }
+  }
   function drawWalk() {
     walkLayer.clearLayers();
     if (!walk || walk.loading) { renderWalkbar(); return; }
-    const all = walkHouses(), nxt = nextHouse(walk.stopAt || null);
+    const all = walkHouses(), nxt = nextHouse(walk.stopAt || null), accent = cssVar('var(--accent)');
     const loop = !driveRoute(walk) && !walk.end;
     if (all.length && walk.end) L.marker([walk.end.lat, walk.end.lng], { icon: L.divIcon({ className: '', html: '<div class="car-pin">🏁</div>', iconSize: [30, 30] }), interactive: false }).addTo(walkLayer);
     if (all.length && (loop || walk.end)) L.marker([walk.start.lat, walk.start.lng], { icon: L.divIcon({ className: '', html: '<div class="car-pin">🚗</div>', iconSize: [30, 30] }), interactive: false }).addTo(walkLayer);
     if (driveRoute(walk)) {
       // A driving order between businesses, not a walking line.
-      if (all.length > 1) L.polyline(all.map(h => [h.lat, h.lng]), { color: cssVar('var(--accent)'), weight: 2, opacity: .45, dashArray: '4 6', interactive: false }).addTo(walkLayer);
+      if (all.length > 1) { const line = all.map(h => [h.lat, h.lng]); L.polyline(line, { color: accent, weight: 2, opacity: .45, dashArray: '4 6', interactive: false }).addTo(walkLayer); arrowsAlong(line, 400); }
     } else {
-      // Walking line: only along mapped streets and paths. Short thin ticks join each door to its curb.
+      // Walking line: only along mapped streets and paths, orange where doors are left and grey where the street is finished.
+      // Arrows along it point the way to walk. Short thin ticks join each door to its curb.
       for (const s of walk.sections) {
-        for (const line of s.path || []) if (line.length > 1) L.polyline(line, { color: cssVar('var(--accent)'), weight: 4, opacity: .6, lineJoin: 'round', interactive: false }).addTo(walkLayer);
-        for (const h of s.houses) if (h.curb) L.polyline([h.curb, [h.lat, h.lng]], { color: cssVar('var(--accent)'), weight: 1.5, opacity: .5, dashArray: '2 4', interactive: false }).addTo(walkLayer);
+        const finished = s.houses.length && s.houses.every(doneOnRoute), col = finished ? cssVar('var(--st-planned)') : accent;
+        for (const line of s.path || []) {
+          if (line.length < 2) continue;
+          L.polyline(line, { color: col, weight: 4, opacity: finished ? .45 : .7, lineJoin: 'round', interactive: false }).addTo(walkLayer);
+          if (!finished) arrowsAlong(line, 70);
+        }
+        for (const h of s.houses) if (h.curb) L.polyline([h.curb, [h.lat, h.lng]], { color: col, weight: 1.5, opacity: .5, dashArray: '2 4', interactive: false }).addTo(walkLayer);
       }
     }
     for (const h of all) {
-      if (placeFor(h)) continue; // logged doors already have a colored pin
-      L.circleMarker([h.lat, h.lng], { radius: 6, weight: 2, color: cssVar('var(--st-planned)'), fillColor: '#ffffff', fillOpacity: 1, bubblingMouseEvents: false })
+      if (placeFor(h)) continue; // logged doors already have a pin
+      const done = doneOnRoute(h);
+      L.marker([h.lat, h.lng], { icon: L.divIcon({ className: 'pin', html: `<span class="wdot${done ? ' done' : ''}"></span>`, iconSize: [14, 14], iconAnchor: [7, 7] }), keyboard: false })
         .on('click', () => openHouse(h.id)).bindTooltip(esc(houseLabel(h)), { direction: 'top', offset: [0, -6] }).addTo(walkLayer);
     }
-    if (nxt) L.circleMarker([nxt.lat, nxt.lng], { radius: 15, weight: 3, color: cssVar('var(--accent)'), fill: false, interactive: false }).addTo(walkLayer);
+    // The next three doors, numbered; the very next one in orange.
+    const order = all.filter(h => !doneOnRoute(h)), i0 = nxt ? order.indexOf(nxt) : -1;
+    const upcoming = i0 < 0 ? [] : [...order.slice(i0), ...order.slice(0, i0)].slice(0, 3);
+    upcoming.forEach((h, i) => L.marker([h.lat, h.lng], { icon: L.divIcon({ className: 'pin', html: `<span class="nextnum${i ? '' : ' first'}">${i + 1}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 1000 - i, keyboard: false })
+      .on('click', () => openHouse(h.id)).bindTooltip(`${i ? `Then` : 'Next'}: ${esc(houseLabel(h))}`, { direction: 'top', offset: [0, -12] }).addTo(walkLayer));
     renderWalkbar();
   }
   function renderWalkbar() {
