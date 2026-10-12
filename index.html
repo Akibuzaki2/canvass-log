@@ -418,6 +418,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .quickgo-btns .btn { height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .quickgo-btns .btn::after { content: '→'; color: var(--muted); }
 .quickgo .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); }
+.survey { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.survey .sq { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
+.survey .yn { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.survey .yn button { height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-weight: 600; font-size: 14px; }
+.survey .yn button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .notechips { display: flex; flex-wrap: wrap; gap: 6px; }
 .notechips .chip, .notechips .chip[aria-pressed="false"] { opacity: 1; box-shadow: none; padding: 5px 10px; font-size: 13px; background: var(--paper); }
 .notechips .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
@@ -669,6 +674,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       </div>
     </div>
     <div class="field">
+      <span class="label" id="surveyLabel">Survey</span>
+      <div class="survey" id="survey" role="group" aria-labelledby="surveyLabel"></div>
+    </div>
+    <div class="field">
       <label class="label" for="fNotes">Notes</label>
       <textarea id="fNotes" placeholder="Best time to come back, interests, dog in the yard..."></textarea>
       <div class="notechips" id="noteChips" aria-label="Add a quick note"></div>
@@ -736,6 +745,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     </div>
     <button class="btn" id="vendorBtn" type="button">Your details for booth requests</button>
     <span class="label">Backup and export</span>
+    <button class="btn primary" id="exportXlsx" type="button">Contact sheet for work (Excel)</button>
     <button class="btn" id="exportCsv" type="button">Export spreadsheet (CSV)</button>
     <button class="btn" id="exportJson" type="button">Download backup file</button>
     <button class="btn" id="importJson" type="button">Restore from backup file</button>
@@ -1215,6 +1225,20 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     saveThenNext = true; $('visitForm').requestSubmit();
   });
 
+  // Survey: the four questions asked at every door, one tap each. Tap again to clear.
+  const SURVEY = [{ key: 'allergy', q: 'Allergies or asthma' }, { key: 'pets', q: 'Pets' }, { key: 'married', q: 'Married' }, { key: 'owner', q: 'Homeowner' }];
+  let survey = {};
+  const yesNo = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '';
+  function paintSurvey() {
+    $('survey').innerHTML = SURVEY.map(s => `<div class="sq"><span>${s.q}</span><div class="yn">${['yes', 'no'].map(v =>
+      `<button type="button" data-q="${s.key}" data-v="${v}" aria-pressed="${survey[s.key] === v}">${yesNo(v)}</button>`).join('')}</div></div>`).join('');
+  }
+  $('survey').addEventListener('click', e => {
+    const b = e.target.closest('[data-q]'); if (!b) return;
+    if (survey[b.dataset.q] === b.dataset.v) delete survey[b.dataset.q]; else survey[b.dataset.q] = b.dataset.v;
+    paintSurvey();
+  });
+
   let picked = null; // the last house opened, for "Use tapped house" in the route builder
   function fillQuick(p) {
     const lat = p ? p.lat : draft.lat, lng = p ? p.lng : draft.lng;
@@ -1240,6 +1264,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('fAddress').value = known ? address : ''; $('fAddress').placeholder = 'Looking up…'; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = address; $('sheetSub').textContent = 'New address';
     $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fCity').value = city || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
+    survey = {}; paintSurvey();
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
     $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
     fillQuick(null); showSheet('sheet'); markClean();
@@ -1255,6 +1280,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('sheetTitle').textContent = p.address;
     $('sheetSub').textContent = `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
     $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fCity').value = p.city || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
+    survey = { ...(p.survey || {}) }; paintSurvey();
     const h = (p.history || []).slice().reverse();
     $('historyWrap').hidden = !h.length;
     $('history').innerHTML = h.map(x => { const s = statusOf(x.status); return `<li style="--c:${s.color}"><span class="dot"></span><time>${fmtDateTime(x.t)}</time>${s.label}</li>`; }).join('');
@@ -1268,10 +1294,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   // the default. Fields the map fills in on its own (address, city, neighborhood) don't count as changes.
   const FORM_FIELDS = ['fName', 'fPhone', 'fNotes', 'fAddress', 'fCity', 'fArea', 'fBiz'];
   let clean = {};
-  const fieldVal = id => id === 'status' ? selStatus : $(id).value.trim();
-  function markClean() { clean = {}; ['status', ...FORM_FIELDS].forEach(k => (clean[k] = fieldVal(k))); }
+  const fieldVal = id => id === 'status' ? selStatus : id === 'survey' ? SURVEY.map(s => survey[s.key] || '').join() : $(id).value.trim();
+  function markClean() { clean = {}; ['status', 'survey', ...FORM_FIELDS].forEach(k => (clean[k] = fieldVal(k))); }
   function settle(id) { clean[id] = fieldVal(id); }
-  const isDirty = () => openSheetId === 'sheet' && !!draft && ['status', ...FORM_FIELDS].some(k => clean[k] !== fieldVal(k));
+  const isDirty = () => openSheetId === 'sheet' && !!draft && ['status', 'survey', ...FORM_FIELDS].some(k => clean[k] !== fieldVal(k));
   let leaveThen = null;
   function guardLeave(fn) {
     if (!isDirty()) return fn();
@@ -1313,7 +1339,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const wid = draft.walkId;
     const now = Date.now();
     const isBiz = !$('bizWrap').hidden;
-    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
+    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), survey: { ...survey }, name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
     let p = draft.id && places.find(x => x.id === draft.id);
     if (p) {
       // Log a visit when the status changes, or when the door is knocked again on a new day.
@@ -1493,10 +1519,12 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       <div class="report-actions">
         <button class="btn" type="button" id="shareReport">Share report</button>
         <button class="btn" type="button" id="csvReport">Export these rows</button>
+        <button class="btn" type="button" id="xlsxReport">Contact sheet (Excel)</button>
       </div>`;
     $('shareReport').onclick = () => shareReport(title, visits, s);
     $('csvReport').onclick = () => exportVisits(visits);
-    $('shareReport').disabled = $('csvReport').disabled = !visits.length;
+    $('xlsxReport').onclick = () => exportContacts([...new Map(visits.map(v => [v.p.id, v.p])).values()]);
+    $('shareReport').disabled = $('csvReport').disabled = $('xlsxReport').disabled = !visits.length;
   }
 
   function reportText(title, visits, s) {
@@ -4083,6 +4111,63 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     download(`canvass-log-${stamp()}.csv`, [head.map(q).join(','), ...lines].join('\n'), 'text/csv');
   });
   $('exportJson').addEventListener('click', () => backup());
+  $('exportXlsx').addEventListener('click', () => exportContacts(places));
+
+  // ---------- Excel contact sheet ----------
+  // One row per person reached, in place of the paper survey cards. A real .xlsx, written here with no
+  // library: a few XML parts in an uncompressed zip.
+  const CRC = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = b => { let c = 0xffffffff; for (const x of b) c = CRC[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  function zip(files) {
+    const enc = new TextEncoder(), parts = [], dir = []; let off = 0;
+    for (const [name, text] of files) {
+      const n = enc.encode(name), d = enc.encode(text), c = crc32(d);
+      const h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint32(14, c, true); h.setUint32(18, d.length, true); h.setUint32(22, d.length, true); h.setUint16(26, n.length, true);
+      parts.push(new Uint8Array(h.buffer), n, d);
+      const e = new DataView(new ArrayBuffer(46));
+      e.setUint32(0, 0x02014b50, true); e.setUint16(4, 20, true); e.setUint16(6, 20, true); e.setUint32(16, c, true); e.setUint32(20, d.length, true); e.setUint32(24, d.length, true); e.setUint16(28, n.length, true); e.setUint32(42, off, true);
+      dir.push(new Uint8Array(e.buffer), n);
+      off += 30 + n.length + d.length;
+    }
+    const size = dir.reduce((t, a) => t + a.length, 0), end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, size, true); end.setUint32(16, off, true);
+    return new Blob([...parts, ...dir, new Uint8Array(end.buffer)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  function xlsx(sheetName, head, rows, widths) {
+    const x = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+    const col = i => (i >= 26 ? String.fromCharCode(64 + Math.floor(i / 26)) : '') + String.fromCharCode(65 + i % 26);
+    const row = (cells, r, st) => `<row r="${r}">${cells.map((v, i) => `<c r="${col(i)}${r}" t="inlineStr" s="${st}"><is><t xml:space="preserve">${x(v)}</t></is></c>`).join('')}</row>`;
+    const last = `${col(head.length - 1)}${rows.length + 1}`;
+    const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`
+      + `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+      + `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`
+      + `<sheetData>${row(head, 1, 1)}${rows.map((r, i) => row(r, i + 2, 2)).join('')}</sheetData><autoFilter ref="A1:${last}"/><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+    const ns = 'http://schemas.openxmlformats.org';
+    return zip([
+      ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="${ns}/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+      ['_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${ns}/package/2006/relationships"><Relationship Id="rId1" Type="${ns}/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+      ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="${ns}/spreadsheetml/2006/main" xmlns:r="${ns}/officeDocument/2006/relationships"><sheets><sheet name="${x(sheetName)}" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'${x(sheetName)}'!$A$1:$${col(head.length - 1)}$${rows.length + 1}</definedName></definedNames></workbook>`],
+      ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${ns}/package/2006/relationships"><Relationship Id="rId1" Type="${ns}/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${ns}/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+      ['xl/worksheets/sheet1.xml', sheet],
+      ['xl/styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${ns}/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1D2A3A"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFD5DAE0"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`],
+    ]);
+  }
+  function exportContacts(list) {
+    const people = list.filter(p => p.name || p.phone || (p.survey && Object.keys(p.survey).length))
+      .sort((a, b) => (lastT(b) - lastT(a)));
+    if (!people.length) return toast('No names, phones or survey answers to export yet.');
+    const head = ['Date', 'Name', 'Phone', 'Street address', 'City', 'ZIP', 'Status', ...SURVEY.map(s => s.q), 'Notes'];
+    const rows = people.map(p => {
+      const parts = (p.address || '').split(',').map(t => t.trim()), zipM = (p.address || '').match(/\b\d{5}(-\d{4})?\b(?!.*\b\d{5}\b)/);
+      return [fmtDate(lastT(p)), p.name, p.phone, p.biz ? `${p.biz}, ${parts[0]}` : parts[0], p.city || '', zipM ? zipM[0] : '', p.status ? statusOf(p.status).label : '', ...SURVEY.map(s => yesNo((p.survey || {})[s.key])), p.notes];
+    });
+    const url = URL.createObjectURL(xlsx('Contacts', head, rows, [10, 18, 14, 24, 12, 7, 14, 18, 7, 9, 11, 40]));
+    const a = document.createElement('a'); a.href = url; a.download = `canvass-contacts-${stamp()}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+    toast(`Contact sheet: ${people.length} ${people.length === 1 ? 'person' : 'people'}`);
+  }
+  const lastT = p => ((p.history || []).at(-1) || {}).t || p.updated || 0;
   function backup() {
     try { localStorage.setItem('canvass-log.backedup', String(Date.now())); } catch {}
     download(`canvass-log-backup-${stamp()}.json`, JSON.stringify({ app: 'canvass-log', version: 1, places }, null, 1), 'application/json');
