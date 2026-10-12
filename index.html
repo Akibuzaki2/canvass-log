@@ -33,6 +33,7 @@
   --accent-ink: #ffffff;
   --st-lead: #1f9d55;
   --st-sold: #7c3aed;
+  --st-nosolicit: #263238;
   --st-rejected: #d23b3b;
   --st-nocontact: #6b7f95;
   --st-return: #d99a0b;
@@ -46,7 +47,7 @@
   :root:not([data-theme="light"]) {
     --ink: #e7ecf2; --paper: #11171e; --card: #1a222c; --line: #2c3743; --line-soft: #232d38; --muted: #93a1b0;
     --accent: #f07a45; --accent-ink: #1a0d06;
-    --st-nocontact: #8ea0b4; --st-planned: #7b8794; --st-sold: #9d6bff;
+    --st-nocontact: #8ea0b4; --st-planned: #7b8794; --st-sold: #9d6bff; --st-nosolicit: #aab4bf;
     --shadow: 0 8px 28px rgba(0, 0, 0, .5);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
     --hero: linear-gradient(150deg, #263a54 0%, #1c2938 60%, #172230 100%);
@@ -56,7 +57,7 @@
 :root[data-theme="dark"] {
   --ink: #e7ecf2; --paper: #11171e; --card: #1a222c; --line: #2c3743; --line-soft: #232d38; --muted: #93a1b0;
   --accent: #f07a45; --accent-ink: #1a0d06;
-  --st-nocontact: #8ea0b4; --st-planned: #7b8794; --st-sold: #9d6bff;
+  --st-nocontact: #8ea0b4; --st-planned: #7b8794; --st-sold: #9d6bff; --st-nosolicit: #aab4bf;
   --shadow: 0 8px 28px rgba(0, 0, 0, .5);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
   --hero: linear-gradient(150deg, #263a54 0%, #1c2938 60%, #172230 100%);
@@ -871,6 +872,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     { key: 'lead', label: 'Lead gained', color: 'var(--st-lead)' },
     { key: 'sold', label: 'Sold', color: 'var(--st-sold)' },
     { key: 'rejected', label: 'Rejected', color: 'var(--st-rejected)' },
+    { key: 'nosolicit', label: 'No soliciting', color: 'var(--st-nosolicit)' },
     { key: 'nocontact', label: 'No contact made', color: 'var(--st-nocontact)' },
     { key: 'return', label: 'Return later', color: 'var(--st-return)' },
   ];
@@ -987,8 +989,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 
   // Pins carry a shape and a mark as well as a color, so they read in bright sun and for color blindness:
   // lead = circle with a check, rejected = square with an X, return later = diamond with a clock hand,
-  // no contact = circle with a dash, sold = star, not visited = hollow dashed ring.
-  const PIN_MARK = { lead: 'M-3.2 0l2.2 2.3 4.2-4.6', rejected: 'M-2.7-2.7l5.4 5.4M2.7-2.7l-5.4 5.4', return: 'M0-3.2V0l2.2 1.5', nocontact: 'M-3 0h6' };
+  // no contact = circle with a dash, sold = star, no soliciting = circle with a slash, not visited = hollow dashed ring.
+  const PIN_MARK = { lead: 'M-3.2 0l2.2 2.3 4.2-4.6', rejected: 'M-2.7-2.7l5.4 5.4M2.7-2.7l-5.4 5.4', return: 'M0-3.2V0l2.2 1.5', nocontact: 'M-3 0h6', nosolicit: 'M-2.6 2.6l5.2-5.2M0-3.7a3.7 3.7 0 1 0 0 7.4a3.7 3.7 0 1 0 0-7.4' };
   function pinSvg(key, size = 22) {
     const c = cssVar(statusOf(key).color), h = size / 2;
     const shape = key === 'sold' ? `<path d="M0.0 -9.5L2.5 -2.7L9.8 -2.4L4.1 2.1L6.1 9.1L0.0 5.1L-6.1 9.1L-4.1 2.1L-9.8 -2.4L-2.5 -2.7Z" fill="${c}" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>`
@@ -1417,7 +1419,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const m = first.match(/^(\d+)\s*[a-z]?\s+(.*)$/i);
     return m ? [m[2].toLowerCase(), +m[1]] : [first.toLowerCase(), 0];
   }
-  const ORDER = ['sold', 'lead', 'return', 'nocontact', 'rejected', 'planned'];
+  const ORDER = ['sold', 'lead', 'return', 'nocontact', 'rejected', 'nosolicit', 'planned'];
 
   // Visits that pass every filter.
   function visibleVisits() {
@@ -1458,7 +1460,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const count = k => doors.filter(v => v.status === k).length;
     const byArea = new Map();
     for (const v of doors) {
-      const a = areaName(v.p), row = byArea.get(a) || { area: a, doors: 0, lead: 0, sold: 0, return: 0, rejected: 0, nocontact: 0, planned: 0 };
+      const a = areaName(v.p), row = byArea.get(a) || { area: a, doors: 0, lead: 0, sold: 0, return: 0, rejected: 0, nosolicit: 0, nocontact: 0, planned: 0 };
       row.doors++; row[v.status]++; byArea.set(a, row);
     }
     return { visits: visits.length, doors: doors.length, count, areas: [...byArea.values()].sort((a, b) => b.doors - a.doors || a.area.localeCompare(b.area)) };
@@ -2394,7 +2396,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const [min, max] = RANGES[walk.range] || RANGES['20-50'];
     const s0 = walk.start, e0 = walk.end;
     listMode('walk'); renderWalk(); closeSheet();
-    const keep = p => !p || !(p.status === 'rejected' || p.status === 'lead' || p.status === 'sold');
+    const keep = p => !p || !(p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'sold');
     try {
       if (!s0.address) { try { const r = await reverse(s0.lat, s0.lng); s0.address = r.address; s0.area ||= r.area; } catch {} }
       s0.suffix = (s0.address || '').split(',').slice(1).join(',').trim();
@@ -2467,7 +2469,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   function nextHouse(afterId) {
     const all = walkHouses();
     const i = afterId ? all.findIndex(h => h.id === afterId) : -1;
-    return all.slice(i + 1).find(h => !doneOnRoute(h)) || all.slice(0, i + 1).find(h => !doneOnRoute(h)) || null;
+    const open = h => !doneOnRoute(h) && (placeFor(h) || {}).status !== 'nosolicit';
+    return all.slice(i + 1).find(open) || all.slice(0, i + 1).find(open) || null;
   }
   function lastVisit(p) {
     const t = p && (p.history || []).at(-1)?.t;
@@ -2603,13 +2606,20 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     }
     return t / 1609.344;
   }
+  // Known no-soliciting homes along a route: on it, or skipped beside it.
+  function noSolicitOn(w) {
+    const hs = (w && w.sections || []).flatMap(x => x.houses); if (!hs.length) return 0;
+    const near = (a, b) => Math.abs(a.lat - b.lat) < 0.0004 && Math.abs(a.lng - b.lng) < 0.0005 && Math.hypot((a.lat - b.lat) * 110540, (a.lng - b.lng) * 111320 * Math.cos(a.lat * Math.PI / 180)) < 35;
+    return places.filter(p => p.status === 'nosolicit' && hs.some(h => near(p, h))).length;
+  }
+  const nsText = n => n ? `${n} no soliciting` : '';
   const milesText = mi => mi == null ? '' : `${mi < 0.95 ? mi.toFixed(2).replace(/0$/, '') : mi.toFixed(1)} mi walk`;
   function savedHtml() {
     if (!routes.length) return '';
     return `<div class="report"><div class="report-head"><h2>Saved routes</h2></div>
       <ul class="rows saved">${routes.map(r => {
         const hs = r.sections.flatMap(x => x.houses), d = (r.doneIds || []).length;
-        return `<li class="saved-row"><div class="saved-text"><b>${esc(r.name || 'Route')}</b><span class="sub">${d} of ${hs.length} done${routeMiles(r) != null ? ` · ${milesText(routeMiles(r))}` : ''}${r.worked ? ` · last worked ${fmtDate(r.worked)}` : ''}</span></div>
+        return `<li class="saved-row"><div class="saved-text"><b>${esc(r.name || 'Route')}</b><span class="sub">${d} of ${hs.length} done${routeMiles(r) != null ? ` · ${milesText(routeMiles(r))}` : ''}${noSolicitOn(r) ? ` · 🚫 ${nsText(noSolicitOn(r))}` : ''}${r.worked ? ` · last worked ${fmtDate(r.worked)}` : ''}</span></div>
           <button class="btn primary" type="button" data-open="${esc(r.id)}">${d ? 'Resume' : 'Open'}</button>
           <button class="btn" type="button" data-del="${esc(r.id)}" aria-label="Delete">✕</button></li>`;
       }).join('')}</ul></div>`;
@@ -2654,6 +2664,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       ${all.length && routeMiles(walk) != null ? `<p class="park">📏 Route length: <b>${milesText(routeMiles(walk)).replace(' walk', '')}</b>, about ${Math.max(1, Math.round(routeMiles(walk) * 20))} min of walking plus time at doors.</p>` : ''}
       ${all.length && walk.end ? `<p class="park">Start at <b>${esc(startLabel())}</b> and finish at <b>${esc(walk.end.label || 'your end point')}</b> 🏁</p>`
         : all.length && !driveRoute(walk) ? `<p class="park">🚗 Park at <b>${esc(startLabel())}</b>. The walk is a loop that ends back there.</p>` : ''}
+      ${noSolicitOn(walk) ? `<p class="park">🚫 <b>${noSolicitOn(walk)}</b> known no-soliciting home${noSolicitOn(walk) === 1 ? '' : 's'} on this route. They are skipped like rejections.</p>` : ''}
       ${walk.skipped ? `<p class="fine">Left out ${walk.skipped} out-of-the-way house${walk.skipped === 1 ? '' : 's'} that would need a long walk for one door.</p>` : ''}
       ${walk.stopAt && done && nxt ? `<p class="park">Picking up where you stopped: <b>${esc(houseLabel(nxt))}</b></p>` : ''}
       ${walk.error ? `<p class="warn">${esc(walk.error)}</p><div class="report-actions"><button class="btn primary" type="button" id="walkRetry">Try again</button></div>` : ''}
@@ -2811,7 +2822,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const h = p.history || [];
       if (h.length) s.visited++;
       if (p.status === 'lead' || p.status === 'sold') s.leads++;
-      if (p.status === 'rejected') s.rejected++;
+      if (p.status === 'rejected' || p.status === 'nosolicit') s.rejected++;
       if (p.status === 'return' || p.status === 'nocontact') s.pending++;
       if (h.length && Date.now() - h.at(-1).t < 14 * 864e5) s.recent++;
     }
@@ -2972,7 +2983,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (seen.has(key)) continue; seen.add(key);
       if (plan.skipChains && (t.brand || t['brand:wikidata'])) continue;
       const p = places.find(x => km([x.lat, x.lng], [lat, lng]) < 0.03 && (!x.biz || x.biz.toLowerCase() === t.name.toLowerCase()));
-      if (p && (p.status === 'rejected' || p.status === 'lead' || p.status === 'sold')) continue; // already decided
+      if (p && (p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'sold')) continue; // already decided
       if (p && p.history && p.history.length && p.status !== 'return' && Date.now() - p.history.at(-1).t < 14 * 864e5) continue;
       const street = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
       const addr = street ? [street, t['addr:city']].filter(Boolean).join(', ') : '';
@@ -3072,7 +3083,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       walk.start.lat = center[0]; walk.start.lng = center[1];
       walk.sections = buildRoute(data, walk.start, 1e9, {
         poly: res.rings, limit: plan.size, pickStart: true,
-        keep: p => !p || !(p.status === 'rejected' || p.status === 'lead' || p.status === 'sold' || (p.history?.length && p.status !== 'return' && p.status !== 'nocontact' && Date.now() - p.history.at(-1).t < 30 * 864e5)),
+        keep: p => !p || !(p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'sold' || (p.history?.length && p.status !== 'return' && p.status !== 'nocontact' && Date.now() - p.history.at(-1).t < 30 * 864e5)),
       });
       const st = walk.sections.start;
       walk.skipped = walk.sections.skipped || 0;
