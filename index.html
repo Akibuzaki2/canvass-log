@@ -419,7 +419,9 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .quickgo-btns .btn { height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .quickgo-btns .btn::after { content: '→'; color: var(--muted); }
 .quickgo .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); }
-.appt { border: 1px solid var(--st-demo); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: color-mix(in srgb, var(--st-demo) 7%, var(--card)); }
+.appt { --c: var(--st-demo); border: 1px solid var(--c); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: color-mix(in srgb, var(--c) 7%, var(--card)); }
+.note.cbw { color: var(--ink); font-weight: 600; }
+.note.cbw.due { color: var(--st-return); }
 .appt .fine { margin: 0; font-size: 13px; color: var(--muted); }
 .survey { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .survey .sq { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
@@ -665,6 +667,15 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     <div class="field">
       <span class="label" id="statusLabel">How did it go?</span>
       <div class="statuses" id="statusBtns" role="group" aria-labelledby="statusLabel"></div>
+    </div>
+    <div class="appt" id="cbBox" style="--c:var(--st-return)" hidden>
+      <span class="label">When should you come back?</span>
+      <div class="notechips" id="cbQuick"></div>
+      <div class="two">
+        <div class="field"><label class="label" for="fCbDate">Date</label><input id="fCbDate" type="date"></div>
+        <div class="field"><label class="label" for="fCbTime">Time</label><input id="fCbTime" type="time" step="900"></div>
+      </div>
+      <p class="fine">Callbacks show under Follow up on the Today tab, soonest first, ready to route. Leave blank if they didn't say.</p>
     </div>
     <div class="appt" id="apptBox" hidden>
       <span class="label" id="apptLabel">Appointment</span>
@@ -1205,7 +1216,25 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   function paintStatus() {
     [...$('statusBtns').children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === selStatus)));
     $('apptBox').hidden = selStatus !== 'demo';
+    $('cbBox').hidden = selStatus !== 'return';
   }
+  // Return later: the day and time they asked you to come back, if they said.
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const CB_QUICK = [
+    ['This evening', () => [new Date(), '18:00']],
+    ['Tomorrow', () => { const d = new Date(); d.setDate(d.getDate() + 1); return [d, '']; }],
+    ['Tomorrow evening', () => { const d = new Date(); d.setDate(d.getDate() + 1); return [d, '18:00']; }],
+    ['Saturday', () => { const d = new Date(); d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7)); return [d, '10:00']; }],
+  ];
+  $('cbQuick').innerHTML = CB_QUICK.map(([l], i) => `<button type="button" class="chip" data-cb="${i}" aria-pressed="false">${l}</button>`).join('');
+  $('cbQuick').addEventListener('click', e => {
+    const b = e.target.closest('[data-cb]'); if (!b) return;
+    const [d, t] = CB_QUICK[+b.dataset.cb][1](); $('fCbDate').value = ymd(d); $('fCbTime').value = t;
+  });
+  function fillCallback(c) { $('fCbDate').value = c ? c.date : ''; $('fCbTime').value = c ? c.time || '' : ''; }
+  const cbAt = c => c && c.date ? new Date(`${c.date}T${c.time || '00:00'}`) : null;
+  const cbText = c => { const d = cbAt(c); if (!d) return ''; const day = c.date === ymd(new Date()) ? 'today' : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); return c.time ? `${day}, ${fmtTime(d)}` : day; };
+  const cbDue = c => !!(c && c.date && c.date <= ymd(new Date()));
   // Demo booked: when, and what for. Saving hands the phone a calendar event (.ics) with two alerts.
   const PURPOSES = ['Demo', 'Follow up', 'Add ons'];
   let apptPurpose = 'Demo';
@@ -1328,7 +1357,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('fAddress').value = known ? address : ''; $('fAddress').placeholder = 'Looking up…'; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = address; $('sheetSub').textContent = 'New address';
     $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fCity').value = city || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
-    survey = {}; paintSurvey(); fillAppt(null);
+    survey = {}; paintSurvey(); fillAppt(null); fillCallback(null);
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
     $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
     fillQuick(null); showSheet('sheet'); markClean();
@@ -1342,9 +1371,9 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     selStatus = p.status || ''; paintStatus();
     $('fAddress').value = p.address; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = p.address;
-    $('sheetSub').textContent = p.status === 'demo' && p.appt ? `Booked: ${apptText(p.appt)}` : `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
+    $('sheetSub').textContent = p.status === 'return' && p.callback ? `Come back ${cbText(p.callback)}` : p.status === 'demo' && p.appt ? `Booked: ${apptText(p.appt)}` : `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
     $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fCity').value = p.city || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
-    survey = { ...(p.survey || {}) }; paintSurvey(); fillAppt(p.appt);
+    survey = { ...(p.survey || {}) }; paintSurvey(); fillAppt(p.appt); fillCallback(p.status === 'return' ? p.callback : null);
     const h = (p.history || []).slice().reverse();
     $('historyWrap').hidden = !h.length;
     $('history').innerHTML = h.map(x => { const s = statusOf(x.status); return `<li style="--c:${s.color}"><span class="dot"></span><time>${fmtDateTime(x.t)}</time>${s.label}</li>`; }).join('');
@@ -1356,7 +1385,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 
   // Unsaved changes: leaving the address sheet after typing or picking something asks first, with Save as
   // the default. Fields the map fills in on its own (address, city, neighborhood) don't count as changes.
-  const FORM_FIELDS = ['fName', 'fPhone', 'fNotes', 'fAddress', 'fCity', 'fArea', 'fBiz', 'fApptDate', 'fApptTime', 'purpose'];
+  const FORM_FIELDS = ['fName', 'fPhone', 'fNotes', 'fAddress', 'fCity', 'fArea', 'fBiz', 'fApptDate', 'fApptTime', 'purpose', 'fCbDate', 'fCbTime'];
   let clean = {};
   const fieldVal = id => id === 'status' ? selStatus : id === 'purpose' ? (selStatus === 'demo' ? apptPurpose : '') : id === 'survey' ? SURVEY.map(s => survey[s.key] || '').join() : $(id).value.trim();
   function markClean() { clean = {}; ['status', 'survey', ...FORM_FIELDS].forEach(k => (clean[k] = fieldVal(k))); }
@@ -1405,7 +1434,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const appt = selStatus === 'demo' ? { date: $('fApptDate').value, time: $('fApptTime').value, purpose: apptPurpose } : null;
     if (appt && !apptAt(appt)) { saveThenNext = false; $('fApptDate').focus(); toast('Pick the date and start time for the appointment.'); return; }
     const isBiz = !$('bizWrap').hidden;
-    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), survey: { ...survey }, ...(appt ? { appt } : {}), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
+    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), survey: { ...survey }, ...(appt ? { appt } : {}), callback: selStatus === 'return' && $('fCbDate').value ? { date: $('fCbDate').value, time: $('fCbTime').value } : undefined, name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
     let p = draft.id && places.find(x => x.id === draft.id);
     if (p) {
       // Log a visit when the status changes, or when the door is knocked again on a new day.
@@ -1418,7 +1447,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     }
     afterSave(p, wid);
     if (appt && JSON.stringify(appt) !== JSON.stringify(draft.apptWas || null)) addToCalendar(p);
-    if (persist()) toast(appt ? `Booked: ${apptText(appt)}` : selStatus ? `Saved as ${statusOf(selStatus).label}` : 'Saved to your plan');
+    if (persist()) toast(appt ? `Booked: ${apptText(appt)}` : p.callback ? `Come back ${cbText(p.callback)}` : selStatus ? `Saved as ${statusOf(selStatus).label}` : 'Saved to your plan');
     closeSheet(); refresh();
     if (saveThenNext) { saveThenNext = false; goNext(wid); }
   });
@@ -3985,11 +4014,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         <p class="fine">${r.worked ? `Last worked ${fmtDate(r.worked)}` : `Saved ${fmtDate(r.saved || Date.now())}`}${routeMiles(r) != null ? ` · ${milesText(routeMiles(r))}` : ''}</p>
         <div class="report-actions"><button class="btn primary" type="button" data-flow="resume" data-id="${esc(r.id)}">Resume this route</button></div></article>`;
     }
-    const fu = followUps().length, lc = leadsToCall().length, inbox = (() => { const i = inboxItems(); return i.review.length + i.asks.length + i.calls.length; })();
+    const fu = followUps().length, cbd = followUps().filter(p => cbDue(p.callback)).length, lc = leadsToCall().length, inbox = (() => { const i = inboxItems(); return i.review.length + i.asks.length + i.calls.length; })();
     const flows = [
       { k: 'knock', ic: 'walk', t: walk && walkHouses().length ? 'Keep knocking' : 'Start knocking here', d: walk && walkHouses().length ? 'Go to the next door on your route' : `Builds a ${(rb.range || '20-50').replace('-', ' to ')} house loop from where you stand` },
       { k: 'here', ic: 'pin', t: 'Log the door I’m at', d: 'Uses your location to open the right house' },
-      { k: 'follow', ic: 'phone', t: 'Follow up', d: fu || lc ? `${fu} to revisit · ${lc} lead${lc === 1 ? '' : 's'} to call` : 'Return later doors and leads to call' },
+      { k: 'follow', ic: 'phone', t: 'Follow up', d: fu || lc ? `${cbd ? `${cbd} callback${cbd === 1 ? '' : 's'} due today · ` : ''}${fu} to revisit · ${lc} lead${lc === 1 ? '' : 's'} to call` : 'Return later doors and leads to call' },
       { k: 'plan', ic: 'target', t: 'Find a good area', d: 'Ranks nearby neighborhoods and builds a route' },
       { k: 'wrap', ic: 'flag', t: 'Wrap up the day', d: knocked ? 'Report, save your spot, back up' : 'Share the day, save your spot, back up' },
       { k: 'booths', ic: 'tent', t: 'Find event booths', d: inbox ? `${inbox} update${inbox === 1 ? '' : 's'} waiting` : 'Best rated events near you' },
@@ -4073,12 +4102,15 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       </div></div>`;
   }
   function openFollowUps() {
-    const ret = followUps().sort((a, b) => (a.updated || 0) - (b.updated || 0)), leads = leadsToCall().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    const when = p => cbAt(p.callback) ? cbAt(p.callback).getTime() : Infinity;
+    const ret = followUps().sort((a, b) => when(a) - when(b) || (a.updated || 0) - (b.updated || 0)), due = ret.filter(p => cbDue(p.callback)), leads = leadsToCall().sort((a, b) => (b.updated || 0) - (a.updated || 0));
     showFlow('Follow up', 'Doors to revisit and leads to call.', `
-      ${ret.length ? `<button class="btn primary" type="button" id="fuRoute">${icon('play', 'btn-ic')}Route through ${ret.length} Return later door${ret.length === 1 ? '' : 's'}</button>` : ''}
-      <div class="ev-sec"><h3>Return later (${ret.length})</h3>${ret.length ? ret.map(p => personRow(p)).join('') : '<p class="fine">Nothing to revisit. Doors you mark Return later show up here.</p>'}</div>
+      ${due.length ? `<button class="btn primary" type="button" id="fuDue">${icon('play', 'btn-ic')}Route through ${due.length} callback${due.length === 1 ? '' : 's'} due today</button>` : ''}
+      ${ret.length ? `<button class="btn ${due.length ? '' : 'primary'}" type="button" id="fuRoute">${icon('play', 'btn-ic')}Route through ${ret.length === 1 ? 'the Return later door' : `all ${ret.length} Return later doors`}</button>` : ''}
+      <div class="ev-sec"><h3>Return later (${ret.length})</h3>${ret.length ? ret.map(p => personRow(p, p.callback ? `<span class="note cbw${cbDue(p.callback) ? ' due' : ''}">🕑 Come back ${esc(cbText(p.callback))}</span>` : '')).join('') : '<p class="fine">Nothing to revisit. Doors you mark Return later show up here.</p>'}</div>
       <div class="ev-sec"><h3>Leads with a phone number (${leads.length})</h3>${leads.length ? leads.map(p => personRow(p)).join('') : '<p class="fine">Leads you save with a phone number show up here, ready to call.</p>'}</div>`);
     if ($('fuRoute')) $('fuRoute').onclick = () => getLoc((lat, lng) => followRoute(ret, lat, lng), 'Allow location access so the route can start where you are.');
+    if ($('fuDue')) $('fuDue').onclick = () => getLoc((lat, lng) => followRoute(due, lat, lng, 'Callbacks'), 'Allow location access so the route can start where you are.');
   }
   $('flowBody').addEventListener('click', e => {
     const b = e.target.closest('[data-open]'); if (!b) return;
@@ -4086,7 +4118,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     closeSheet(); showTab('map'); map.setView([p.lat, p.lng], 18); openSheet(p.id);
   });
   // Nearest-first order through the doors, grouped by street. Doors can be far apart, so it is a driving order.
-  function followRoute(list, lat, lng) {
+  function followRoute(list, lat, lng, title = 'Return later doors') {
     const left = list.slice(), order = []; let at = [lat, lng];
     while (left.length) { let bi = 0, bd = Infinity; left.forEach((p, i) => { const d = km(at, [p.lat, p.lng]); if (d < bd) { bd = d; bi = i; } }); const p = left.splice(bi, 1)[0]; order.push(p); at = [p.lat, p.lng]; }
     const sections = [];
@@ -4096,7 +4128,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const h = { id: 'f-' + p.id, lat: p.lat, lng: p.lng, num: '', street, placeId: p.id };
       if (last && last.street === street) last.houses.push(h); else sections.push({ street, cont: sections.some(s => s.street === street), houses: [h] });
     }
-    walk = { id: 'r' + Date.now(), name: `Return later doors, ${fmtDate(Date.now())}`, start: { lat, lng, address: 'Your location', area: '', suffix: '' }, radius: 0, loading: false, plan: { kind: 'followup', title: 'Return later doors' }, sections, doneIds: [] };
+    walk = { id: 'r' + Date.now(), name: `${title}, ${fmtDate(Date.now())}`, start: { lat, lng, address: 'Your location', area: '', suffix: '' }, radius: 0, loading: false, plan: { kind: 'followup', title }, sections, doneIds: [] };
     saveWalk(); closeSheet(); renderWalk(); drawWalk(); renderHome();
     showTab('map'); fitWalk();
     toast(`${order.length} door${order.length === 1 ? '' : 's'} in nearest-first order`);
@@ -4227,7 +4259,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const head = ['Date', 'Name', 'Phone', 'Street address', 'City', 'ZIP', 'Status', 'Appointment', ...SURVEY.map(s => s.q), 'Notes'];
     const rows = people.map(p => {
       const parts = (p.address || '').split(',').map(t => t.trim()), zipM = (p.address || '').match(/\b\d{5}(-\d{4})?\b(?!.*\b\d{5}\b)/);
-      return [fmtDate(lastT(p)), p.name, p.phone, p.biz ? `${p.biz}, ${parts[0]}` : parts[0], p.city || '', zipM ? zipM[0] : '', p.status ? statusOf(p.status).label : '', p.status === 'demo' ? apptText(p.appt) : '', ...SURVEY.map(s => yesNo((p.survey || {})[s.key])), p.notes];
+      return [fmtDate(lastT(p)), p.name, p.phone, p.biz ? `${p.biz}, ${parts[0]}` : parts[0], p.city || '', zipM ? zipM[0] : '', p.status ? statusOf(p.status).label : '', p.status === 'demo' ? apptText(p.appt) : p.status === 'return' && p.callback ? `Come back ${cbText(p.callback)}` : '', ...SURVEY.map(s => yesNo((p.survey || {})[s.key])), p.notes];
     });
     const url = URL.createObjectURL(xlsx('Contacts', head, rows, [10, 18, 14, 24, 12, 7, 14, 22, 18, 7, 9, 11, 40]));
     const a = document.createElement('a'); a.href = url; a.download = `canvass-contacts-${stamp()}.xlsx`;
