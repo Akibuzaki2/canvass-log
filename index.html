@@ -33,6 +33,7 @@
   --accent-ink: #ffffff;
   --st-lead: #1f9d55;
   --st-sold: #7c3aed;
+  --st-demo: #0e8f9a;
   --st-nosolicit: #263238;
   --st-rejected: #d23b3b;
   --st-nocontact: #6b7f95;
@@ -47,7 +48,7 @@
   :root:not([data-theme="light"]) {
     --ink: #e7ecf2; --paper: #11171e; --card: #1a222c; --line: #2c3743; --line-soft: #232d38; --muted: #93a1b0;
     --accent: #f07a45; --accent-ink: #1a0d06;
-    --st-nocontact: #8ea0b4; --st-planned: #7b8794; --st-sold: #9d6bff; --st-nosolicit: #aab4bf;
+    --st-nocontact: #8ea0b4; --st-planned: #7b8794; --st-sold: #9d6bff; --st-nosolicit: #aab4bf; --st-demo: #33c0cc;
     --shadow: 0 8px 28px rgba(0, 0, 0, .5);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
     --hero: linear-gradient(150deg, #263a54 0%, #1c2938 60%, #172230 100%);
@@ -57,7 +58,7 @@
 :root[data-theme="dark"] {
   --ink: #e7ecf2; --paper: #11171e; --card: #1a222c; --line: #2c3743; --line-soft: #232d38; --muted: #93a1b0;
   --accent: #f07a45; --accent-ink: #1a0d06;
-  --st-nocontact: #8ea0b4; --st-planned: #7b8794; --st-sold: #9d6bff; --st-nosolicit: #aab4bf;
+  --st-nocontact: #8ea0b4; --st-planned: #7b8794; --st-sold: #9d6bff; --st-nosolicit: #aab4bf; --st-demo: #33c0cc;
   --shadow: 0 8px 28px rgba(0, 0, 0, .5);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
   --hero: linear-gradient(150deg, #263a54 0%, #1c2938 60%, #172230 100%);
@@ -418,6 +419,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .quickgo-btns .btn { height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .quickgo-btns .btn::after { content: '→'; color: var(--muted); }
 .quickgo .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); }
+.appt { border: 1px solid var(--st-demo); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: color-mix(in srgb, var(--st-demo) 7%, var(--card)); }
+.appt .fine { margin: 0; font-size: 13px; color: var(--muted); }
 .survey { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .survey .sq { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
 .survey .yn { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
@@ -663,6 +666,16 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       <span class="label" id="statusLabel">How did it go?</span>
       <div class="statuses" id="statusBtns" role="group" aria-labelledby="statusLabel"></div>
     </div>
+    <div class="appt" id="apptBox" hidden>
+      <span class="label" id="apptLabel">Appointment</span>
+      <div class="statuses three" id="apptPurpose" role="group" aria-labelledby="apptLabel"></div>
+      <div class="two">
+        <div class="field"><label class="label" for="fApptDate">Date</label><input id="fApptDate" type="date"></div>
+        <div class="field"><label class="label" for="fApptTime">Start time</label><input id="fApptTime" type="time" step="900"></div>
+      </div>
+      <button type="button" class="btn" id="apptCal">Add to phone calendar</button>
+      <p class="fine">Saving adds a 2-hour event to your phone's calendar with the name, phone and address, and alerts at 9 am that day and 1 hour before.</p>
+    </div>
     <div class="two">
       <div class="field">
         <label class="label" for="fName">Name</label>
@@ -880,6 +893,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   // ---------- Statuses ----------
   const STATUSES = [
     { key: 'lead', label: 'Lead gained', color: 'var(--st-lead)' },
+    { key: 'demo', label: 'Demo booked', color: 'var(--st-demo)' },
     { key: 'sold', label: 'Sold', color: 'var(--st-sold)' },
     { key: 'rejected', label: 'Rejected', color: 'var(--st-rejected)' },
     { key: 'nosolicit', label: 'No soliciting', color: 'var(--st-nosolicit)' },
@@ -999,8 +1013,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 
   // Pins carry a shape and a mark as well as a color, so they read in bright sun and for color blindness:
   // lead = circle with a check, rejected = square with an X, return later = diamond with a clock hand,
-  // no contact = circle with a dash, sold = star, no soliciting = skull, not visited = hollow dashed ring.
-  const PIN_MARK = { lead: 'M-3.2 0l2.2 2.3 4.2-4.6', rejected: 'M-2.7-2.7l5.4 5.4M2.7-2.7l-5.4 5.4', return: 'M0-3.2V0l2.2 1.5', nocontact: 'M-3 0h6' };
+  // no contact = circle with a dash, demo booked = circle with a calendar, sold = star, no soliciting = skull, not visited = hollow dashed ring.
+  const PIN_MARK = { lead: 'M-3.2 0l2.2 2.3 4.2-4.6', rejected: 'M-2.7-2.7l5.4 5.4M2.7-2.7l-5.4 5.4', return: 'M0-3.2V0l2.2 1.5', nocontact: 'M-3 0h6', demo: 'M-3.6-2.4h7.2v6.2h-7.2zM-3.6-.2h7.2M-1.8-4.2v2.4M1.8-4.2v2.4' };
   function pinSvg(key, size = 22) {
     const c = cssVar(statusOf(key).color), h = size / 2;
     const shape = key === 'nosolicit' ? `<circle r="9.2" fill="${c}" stroke="#fff" stroke-width="1.8"/><g transform="translate(0 -.6)"><path d="M-5.2 .4a5.2 5.2 0 1 1 10.4 0v1.5a1 1 0 0 1-1 1h-.9v2.1h-6.6v-2.1h-.9a1 1 0 0 1-1-1Z" fill="#fff"/><circle cx="-2.1" cy=".5" r="1.45" fill="${c}"/><circle cx="2.1" cy=".5" r="1.45" fill="${c}"/><path d="M0 2l-.75 1.2h1.5Z" fill="${c}"/><path d="M-1.1 3.9v1.2M1.1 3.9v1.2" stroke="${c}" stroke-width=".7"/></g>`
@@ -1190,7 +1204,57 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   });
   function paintStatus() {
     [...$('statusBtns').children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === selStatus)));
+    $('apptBox').hidden = selStatus !== 'demo';
   }
+  // Demo booked: when, and what for. Saving hands the phone a calendar event (.ics) with two alerts.
+  const PURPOSES = ['Demo', 'Follow up', 'Add ons'];
+  let apptPurpose = 'Demo';
+  $('apptPurpose').innerHTML = PURPOSES.map(v => `<button type="button" data-p="${v}" aria-pressed="false" style="--c:var(--st-demo)">${v}</button>`).join('');
+  function paintPurpose() { [...$('apptPurpose').children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.p === apptPurpose))); }
+  $('apptPurpose').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (b) { apptPurpose = b.dataset.p; paintPurpose(); } });
+  function fillAppt(a) {
+    $('fApptDate').value = a ? a.date : ''; $('fApptTime').value = a ? a.time : '';
+    apptPurpose = a ? a.purpose : 'Demo'; paintPurpose();
+  }
+  const apptAt = a => a && a.date && a.time ? new Date(`${a.date}T${a.time}`) : null;
+  const apptText = a => { const d = apptAt(a); return d ? `${a.purpose} ${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}, ${fmtTime(d)}` : ''; };
+  function icsFor(p) {
+    const a = p.appt, start = apptAt(a), end = new Date(start.getTime() + 2 * 3600e3);
+    const two = n => String(n).padStart(2, '0');
+    const local = d => `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}T${two(d.getHours())}${two(d.getMinutes())}00`;
+    const utc = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    const t = v => String(v || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+    const fold = l => { const out = []; while (l.length > 73) { out.push(l.slice(0, 73)); l = ' ' + l.slice(73); } out.push(l); return out.join('\r\n'); };
+    const who = p.name || p.biz || (p.address || '').split(',')[0];
+    // The mailing address: the city in place of a county, so the calendar's map finds the house.
+    const parts = (p.address || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (p.city && !parts.some(x => x.toLowerCase() === p.city.toLowerCase())) { const i = parts.findIndex(x => /county$/i.test(x)); i > 0 ? (parts[i] = p.city) : parts.splice(1, 0, p.city); }
+    const where = parts.join(', ');
+    const nine = new Date(start); nine.setHours(9, 0, 0, 0);
+    const before9 = Math.round((start - nine) / 60000);
+    const alarm = (mins, msg) => ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${t(msg)}`, `TRIGGER:-PT${mins}M`, 'END:VALARM'];
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Canvass Log//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+      `UID:${p.id}-${a.date}-${a.time.replace(':', '')}@canvass-log`, `DTSTAMP:${utc(new Date())}`,
+      `DTSTART:${local(start)}`, `DTEND:${local(end)}`,
+      `SUMMARY:${t(`${a.purpose}: ${who}`)}`,
+      `LOCATION:${t(where)}`,
+      `DESCRIPTION:${t([`${a.purpose} with ${who}`, p.phone && `Phone: ${p.phone}`, `Address: ${where}`, p.notes && `Notes: ${p.notes}`].filter(Boolean).join('\n'))}`,
+      ...alarm(60, `${a.purpose} with ${who} in 1 hour`),
+      ...(before9 > 60 ? alarm(before9, `${a.purpose} with ${who} today at ${fmtTime(start)}`) : []),
+      'END:VEVENT', 'END:VCALENDAR'];
+    return lines.map(fold).join('\r\n') + '\r\n';
+  }
+  function addToCalendar(p) {
+    if (!apptAt(p.appt)) return toast('Pick the date and start time first.');
+    const url = URL.createObjectURL(new Blob([icsFor(p)], { type: 'text/calendar' }));
+    const el = document.createElement('a'); el.href = url; el.download = `${p.appt.purpose.toLowerCase().replace(/\s+/g, '-')}-${p.appt.date}.ics`;
+    document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  $('apptCal').addEventListener('click', () => {
+    const a = { date: $('fApptDate').value, time: $('fApptTime').value, purpose: apptPurpose };
+    const p = draft && draft.id && places.find(x => x.id === draft.id);
+    addToCalendar({ ...(p || { id: 'new' }), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), address: $('fAddress').value.trim(), city: $('fCity').value.trim(), notes: $('fNotes').value.trim(), biz: $('fBiz').value.trim(), appt: a });
+  });
   $('fAddress').addEventListener('input', () => { $('fAddress').dataset.touched = '1'; });
 
   // Quick notes: tap to add a common note, tap again to take it out.
@@ -1264,7 +1328,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('fAddress').value = known ? address : ''; $('fAddress').placeholder = 'Looking up…'; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = address; $('sheetSub').textContent = 'New address';
     $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fCity').value = city || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
-    survey = {}; paintSurvey();
+    survey = {}; paintSurvey(); fillAppt(null);
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
     $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
     fillQuick(null); showSheet('sheet'); markClean();
@@ -1274,13 +1338,13 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   function openSheet(id) {
     const p = places.find(x => x.id === id); if (!p) return;
     if (tempMarker) { tempMarker.remove(); tempMarker = null; }
-    draft = { id: p.id, lat: p.lat, lng: p.lng };
+    draft = { id: p.id, lat: p.lat, lng: p.lng, apptWas: p.status === 'demo' ? p.appt || null : null };
     selStatus = p.status || ''; paintStatus();
     $('fAddress').value = p.address; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = p.address;
-    $('sheetSub').textContent = `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
+    $('sheetSub').textContent = p.status === 'demo' && p.appt ? `Booked: ${apptText(p.appt)}` : `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
     $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fCity').value = p.city || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
-    survey = { ...(p.survey || {}) }; paintSurvey();
+    survey = { ...(p.survey || {}) }; paintSurvey(); fillAppt(p.appt);
     const h = (p.history || []).slice().reverse();
     $('historyWrap').hidden = !h.length;
     $('history').innerHTML = h.map(x => { const s = statusOf(x.status); return `<li style="--c:${s.color}"><span class="dot"></span><time>${fmtDateTime(x.t)}</time>${s.label}</li>`; }).join('');
@@ -1292,9 +1356,9 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 
   // Unsaved changes: leaving the address sheet after typing or picking something asks first, with Save as
   // the default. Fields the map fills in on its own (address, city, neighborhood) don't count as changes.
-  const FORM_FIELDS = ['fName', 'fPhone', 'fNotes', 'fAddress', 'fCity', 'fArea', 'fBiz'];
+  const FORM_FIELDS = ['fName', 'fPhone', 'fNotes', 'fAddress', 'fCity', 'fArea', 'fBiz', 'fApptDate', 'fApptTime', 'purpose'];
   let clean = {};
-  const fieldVal = id => id === 'status' ? selStatus : id === 'survey' ? SURVEY.map(s => survey[s.key] || '').join() : $(id).value.trim();
+  const fieldVal = id => id === 'status' ? selStatus : id === 'purpose' ? (selStatus === 'demo' ? apptPurpose : '') : id === 'survey' ? SURVEY.map(s => survey[s.key] || '').join() : $(id).value.trim();
   function markClean() { clean = {}; ['status', 'survey', ...FORM_FIELDS].forEach(k => (clean[k] = fieldVal(k))); }
   function settle(id) { clean[id] = fieldVal(id); }
   const isDirty = () => openSheetId === 'sheet' && !!draft && ['status', 'survey', ...FORM_FIELDS].some(k => clean[k] !== fieldVal(k));
@@ -1338,8 +1402,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     if (!address) { saveThenNext = false; $('addrBox').open = true; $('fAddress').focus(); toast('Add the address before saving.'); return; }
     const wid = draft.walkId;
     const now = Date.now();
+    const appt = selStatus === 'demo' ? { date: $('fApptDate').value, time: $('fApptTime').value, purpose: apptPurpose } : null;
+    if (appt && !apptAt(appt)) { saveThenNext = false; $('fApptDate').focus(); toast('Pick the date and start time for the appointment.'); return; }
     const isBiz = !$('bizWrap').hidden;
-    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), survey: { ...survey }, name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
+    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), survey: { ...survey }, ...(appt ? { appt } : {}), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
     let p = draft.id && places.find(x => x.id === draft.id);
     if (p) {
       // Log a visit when the status changes, or when the door is knocked again on a new day.
@@ -1351,7 +1417,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       places.push(p);
     }
     afterSave(p, wid);
-    if (persist()) toast(selStatus ? `Saved as ${statusOf(selStatus).label}` : 'Saved to your plan');
+    if (appt && JSON.stringify(appt) !== JSON.stringify(draft.apptWas || null)) addToCalendar(p);
+    if (persist()) toast(appt ? `Booked: ${apptText(appt)}` : selStatus ? `Saved as ${statusOf(selStatus).label}` : 'Saved to your plan');
     closeSheet(); refresh();
     if (saveThenNext) { saveThenNext = false; goNext(wid); }
   });
@@ -1446,7 +1513,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const m = first.match(/^(\d+)\s*[a-z]?\s+(.*)$/i);
     return m ? [m[2].toLowerCase(), +m[1]] : [first.toLowerCase(), 0];
   }
-  const ORDER = ['sold', 'lead', 'return', 'nocontact', 'rejected', 'nosolicit', 'planned'];
+  const ORDER = ['sold', 'demo', 'lead', 'return', 'nocontact', 'rejected', 'nosolicit', 'planned'];
 
   // Visits that pass every filter.
   function visibleVisits() {
@@ -1487,7 +1554,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const count = k => doors.filter(v => v.status === k).length;
     const byArea = new Map();
     for (const v of doors) {
-      const a = areaName(v.p), row = byArea.get(a) || { area: a, doors: 0, lead: 0, sold: 0, return: 0, rejected: 0, nosolicit: 0, nocontact: 0, planned: 0 };
+      const a = areaName(v.p), row = byArea.get(a) || { area: a, doors: 0, lead: 0, demo: 0, sold: 0, return: 0, rejected: 0, nosolicit: 0, nocontact: 0, planned: 0 };
       row.doors++; row[v.status]++; byArea.set(a, row);
     }
     return { visits: visits.length, doors: doors.length, count, areas: [...byArea.values()].sort((a, b) => b.doors - a.doors || a.area.localeCompare(b.area)) };
@@ -2425,7 +2492,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const [min, max] = RANGES[walk.range] || RANGES['20-50'];
     const s0 = walk.start, e0 = walk.end;
     listMode('walk'); renderWalk(); closeSheet();
-    const keep = p => !p || !(p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'sold');
+    const keep = p => !p || !(p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'demo' || p.status === 'sold');
     try {
       if (!s0.address) { try { const r = await reverse(s0.lat, s0.lng); s0.address = r.address; s0.area ||= r.area; } catch {} }
       s0.suffix = (s0.address || '').split(',').slice(1).join(',').trim();
@@ -2850,7 +2917,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (!filterFn(p)) continue;
       const h = p.history || [];
       if (h.length) s.visited++;
-      if (p.status === 'lead' || p.status === 'sold') s.leads++;
+      if (p.status === 'lead' || p.status === 'demo' || p.status === 'sold') s.leads++;
       if (p.status === 'rejected' || p.status === 'nosolicit') s.rejected++;
       if (p.status === 'return' || p.status === 'nocontact') s.pending++;
       if (h.length && Date.now() - h.at(-1).t < 14 * 864e5) s.recent++;
@@ -3012,7 +3079,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (seen.has(key)) continue; seen.add(key);
       if (plan.skipChains && (t.brand || t['brand:wikidata'])) continue;
       const p = places.find(x => km([x.lat, x.lng], [lat, lng]) < 0.03 && (!x.biz || x.biz.toLowerCase() === t.name.toLowerCase()));
-      if (p && (p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'sold')) continue; // already decided
+      if (p && (p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'demo' || p.status === 'sold')) continue; // already decided
       if (p && p.history && p.history.length && p.status !== 'return' && Date.now() - p.history.at(-1).t < 14 * 864e5) continue;
       const street = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
       const addr = street ? [street, t['addr:city']].filter(Boolean).join(', ') : '';
@@ -3112,7 +3179,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       walk.start.lat = center[0]; walk.start.lng = center[1];
       walk.sections = buildRoute(data, walk.start, 1e9, {
         poly: res.rings, limit: plan.size, pickStart: true,
-        keep: p => !p || !(p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'sold' || (p.history?.length && p.status !== 'return' && p.status !== 'nocontact' && Date.now() - p.history.at(-1).t < 30 * 864e5)),
+        keep: p => !p || !(p.status === 'rejected' || p.status === 'nosolicit' || p.status === 'lead' || p.status === 'demo' || p.status === 'sold' || (p.history?.length && p.status !== 'return' && p.status !== 'nocontact' && Date.now() - p.history.at(-1).t < 30 * 864e5)),
       });
       const st = walk.sections.start;
       walk.skipped = walk.sections.skipped || 0;
@@ -4157,12 +4224,12 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const people = list.filter(p => p.name || p.phone || (p.survey && Object.keys(p.survey).length))
       .sort((a, b) => (lastT(b) - lastT(a)));
     if (!people.length) return toast('No names, phones or survey answers to export yet.');
-    const head = ['Date', 'Name', 'Phone', 'Street address', 'City', 'ZIP', 'Status', ...SURVEY.map(s => s.q), 'Notes'];
+    const head = ['Date', 'Name', 'Phone', 'Street address', 'City', 'ZIP', 'Status', 'Appointment', ...SURVEY.map(s => s.q), 'Notes'];
     const rows = people.map(p => {
       const parts = (p.address || '').split(',').map(t => t.trim()), zipM = (p.address || '').match(/\b\d{5}(-\d{4})?\b(?!.*\b\d{5}\b)/);
-      return [fmtDate(lastT(p)), p.name, p.phone, p.biz ? `${p.biz}, ${parts[0]}` : parts[0], p.city || '', zipM ? zipM[0] : '', p.status ? statusOf(p.status).label : '', ...SURVEY.map(s => yesNo((p.survey || {})[s.key])), p.notes];
+      return [fmtDate(lastT(p)), p.name, p.phone, p.biz ? `${p.biz}, ${parts[0]}` : parts[0], p.city || '', zipM ? zipM[0] : '', p.status ? statusOf(p.status).label : '', p.status === 'demo' ? apptText(p.appt) : '', ...SURVEY.map(s => yesNo((p.survey || {})[s.key])), p.notes];
     });
-    const url = URL.createObjectURL(xlsx('Contacts', head, rows, [10, 18, 14, 24, 12, 7, 14, 18, 7, 9, 11, 40]));
+    const url = URL.createObjectURL(xlsx('Contacts', head, rows, [10, 18, 14, 24, 12, 7, 14, 22, 18, 7, 9, 11, 40]));
     const a = document.createElement('a'); a.href = url; a.download = `canvass-contacts-${stamp()}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
     toast(`Contact sheet: ${people.length} ${people.length === 1 ? 'person' : 'people'}`);
