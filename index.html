@@ -343,6 +343,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .sheet-head .titles { flex: 1; min-width: 0; }
 .sheet-head h2 { margin: 0; font-size: 19px; line-height: 1.25; overflow-wrap: anywhere; }
 .sheet-head .sub { font-size: 14px; color: var(--muted); }
+.sheet-head .city { font-size: 15px; font-weight: 600; color: var(--ink); margin-top: 1px; }
 .close { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); display: grid; place-items: center; flex: none; }
 .close svg { width: 20px; height: 20px; }
 .sheet-body { overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
@@ -381,6 +382,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .btn.primary { flex: 1; background: var(--accent); color: var(--accent-ink); border-color: transparent; font-size: 17px; box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent); }
 .btn.danger { color: var(--st-rejected); }
 .btn.danger.confirm { background: var(--st-rejected); color: #fff; border-color: transparent; }
+.leave-ask { position: fixed; inset: 0; z-index: 2500; background: rgba(10, 16, 24, .45); display: grid; place-items: center; padding: 16px; }
+.leave-card { width: 100%; max-width: 360px; background: var(--card); color: var(--ink); border-radius: 18px; padding: 20px 18px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.leave-card h3 { margin: 0; font-size: 19px; }
+.leave-card p { margin: 0 0 6px; color: var(--muted); font-size: 15px; }
+.leave-card .btn { width: 100%; flex: none; }
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 128px);
   background: #1d2a3a; color: #fff; padding: 10px 16px; border-radius: 14px; z-index: 3000; box-shadow: var(--shadow);
@@ -469,6 +475,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 
 /* Map pins */
 .leaflet-marker-icon.pin { background: none; border: 0; }
+.house-num { background: none; border: 0; width: 0 !important; height: 0 !important; }
+.house-num span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font: 700 12px/1 Barlow, system-ui, sans-serif; color: #1d2a3a; background: rgba(255, 255, 255, .88); border-radius: 5px; padding: 2px 4px; box-shadow: 0 0 0 1px rgba(29, 42, 58, .18); }
 .pin-svg { display: block; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.35)); }
 .chip .pin-svg { filter: none; flex: none; }
 .pin.cluster svg { display: block; filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
@@ -629,6 +637,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     <div class="titles">
       <div class="grab"></div>
       <h2 id="sheetTitle">Address</h2>
+      <div class="city" id="sheetCity" hidden></div>
       <div class="sub" id="sheetSub"></div>
     </div>
     <button class="close" id="closeSheet" aria-label="Close">
@@ -673,6 +682,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         <input id="fBiz" autocapitalize="words">
       </div>
       <div class="field">
+        <label class="label" for="fCity">City</label>
+        <input id="fCity" autocapitalize="words" placeholder="Filled in from the map">
+      </div>
+      <div class="field">
         <label class="label" for="fArea">Neighborhood</label>
         <input id="fArea" list="areaList" autocapitalize="words" placeholder="Filled in from the map">
         <datalist id="areaList"></datalist>
@@ -690,6 +703,15 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     <button class="btn primary" id="saveNextBtn" type="button" hidden>Save &amp; next</button>
   </div>
 </section>
+
+<div class="leave-ask" id="leaveAsk" role="alertdialog" aria-modal="true" aria-labelledby="leaveTitle" aria-describedby="leaveSub" hidden>
+  <div class="leave-card">
+    <h3 id="leaveTitle">Save before you go?</h3>
+    <p id="leaveSub"></p>
+    <button class="btn primary" id="leaveSave" type="button">Save</button>
+    <button class="btn" id="leaveDiscard" type="button">Leave without saving</button>
+  </div>
+</div>
 
 <section class="sheet" id="menuSheet" role="dialog" aria-modal="true" aria-labelledby="menuTitle" hidden>
   <div class="sheet-head">
@@ -895,20 +917,46 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const r = await fetch(`${NOMINATIM}/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`, { headers: { 'Accept-Language': navigator.language || 'en' } });
     if (!r.ok) throw new Error('lookup failed');
     const j = await r.json();
-    return { address: shortAddress(j.address, j.display_name), houseNumber: j.address && j.address.house_number, area: areaOf(j.address) };
+    return { address: shortAddress(j.address, j.display_name), houseNumber: j.address && j.address.house_number, area: areaOf(j.address), city: await cityOf(j.address) };
+  }
+  // The town on the mail. Homes outside city limits only carry a county in OpenStreetMap, so those take
+  // the post office's town for their ZIP code instead (looked up once per ZIP and remembered).
+  const ZIP_KEY = 'canvass-log.zips';
+  let zips = {}; try { zips = JSON.parse(localStorage.getItem(ZIP_KEY)) || {}; } catch {}
+  async function cityOf(a) {
+    if (!a) return '';
+    const own = a.city || a.town || a.village || a.hamlet || '';
+    if (own) return own;
+    const cc = (a.country_code || '').toLowerCase(), zip = (a.postcode || '').trim().split(/[-\s]/)[0];
+    if (!cc || !zip) return '';
+    const k = `${cc}:${zip}`;
+    if (zips[k] == null) {
+      try {
+        const r = await fetch(`https://api.zippopotam.us/${cc}/${encodeURIComponent(zip)}`);
+        zips[k] = r.ok ? (((await r.json()).places || [])[0] || {})['place name'] || '' : r.status === 404 ? '' : null;
+        if (zips[k] == null) return '';
+        try { localStorage.setItem(ZIP_KEY, JSON.stringify(zips)); } catch {}
+      } catch { return ''; }
+    }
+    return zips[k];
   }
   function areaOf(a) {
     if (!a) return '';
     return a.neighbourhood || a.quarter || a.suburb || a.residential || a.city_district || a.hamlet || a.village || a.town || a.city || '';
   }
-  // Older saved addresses have no neighborhood yet: look them up quietly, one per second (Nominatim's limit).
+  // Older saved addresses have no neighborhood or city yet: look them up quietly, one per second (Nominatim's limit).
   let backfilling = false;
   async function backfillAreas() {
     if (backfilling || !navigator.onLine) return;
     backfilling = true;
     try {
-      for (const p of places.filter(x => x.area == null)) {
-        try { const r = await reverse(p.lat, p.lng); p.area = r.area || ''; persist(); refresh(); }
+      for (const p of places.filter(x => x.area == null || x.city == null)) {
+        try {
+          const r = await reverse(p.lat, p.lng);
+          if (p.area == null) p.area = r.area || '';
+          if (p.city == null) { p.city = r.city || ''; if (draft && draft.id === p.id && !$('fCity').value) { $('fCity').value = p.city; settle('fCity'); paintCity(); } }
+          persist(); refresh();
+        }
         catch { break; }
         await new Promise(res => setTimeout(res, 1100));
       }
@@ -1023,20 +1071,40 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   });
 
   // Tap the map: look up the address and open a new record there.
+  // Inside an outlined house, the tap opens that house: its saved record if there is one, else a new one
+  // at the house's own number.
   map.on('click', async e => {
     closeResults();
-    const { lat, lng } = e.latlng;
+    let { lat, lng } = e.latlng, num = '';
+    const h = outlineHit(lat, lng);
+    if (h) {
+      const p = places.find(q => !hidden.has(statusOf(q.status).key) && inRing(q.lat, q.lng, h.ring));
+      if (p) return openSheet(p.id);
+      [lat, lng] = labelAt(h); num = h.num;
+    }
     if (tempMarker) tempMarker.remove();
     tempMarker = L.circleMarker([lat, lng], { radius: 10, weight: 3, color: cssVar('var(--accent)'), fillColor: '#fff', fillOpacity: 1, dashArray: '3 3' }).addTo(map);
-    openNew(lat, lng, 'Finding address…');
-    lookupInto(lat, lng);
+    openNew(lat, lng, num ? `${num} …` : 'Finding address…');
+    lookupInto(lat, lng, num);
   });
-  async function lookupInto(lat, lng) {
+  // Addresses that came with the tap (search, a route) still need their city.
+  async function cityInto(lat, lng) {
     try {
-      const { address, area } = await reverse(lat, lng);
+      const { city, area } = await reverse(lat, lng);
+      if (!draft || draft.lat !== lat || draft.lng !== lng) return;
+      if (!$('fCity').value && city) { $('fCity').value = city; settle('fCity'); paintCity(); paintAddrSum(); }
+      if (!$('fArea').value && area) { $('fArea').value = area; settle('fArea'); paintAddrSum(); }
+    } catch {}
+  }
+  async function lookupInto(lat, lng, num) {
+    try {
+      let { address, area, city } = await reverse(lat, lng);
+      // The outline's own number wins over the lookup's nearest guess.
+      if (num && address) { const [first, ...rest] = address.split(', '); address = [/^\d/.test(first) ? first.replace(/^\S+/, num) : `${num} ${first}`, ...rest].join(', '); }
       if (draft && draft.lat === lat && draft.lng === lng) {
-        if (!$('fAddress').dataset.touched) { $('fAddress').value = address; $('sheetTitle').textContent = address || 'Unknown address'; if (address) $('searchInput').value = address; }
-        if (!$('fArea').value) $('fArea').value = area;
+        if (!$('fAddress').dataset.touched) { $('fAddress').value = address; settle('fAddress'); $('sheetTitle').textContent = address || 'Unknown address'; if (address) $('searchInput').value = address; }
+        if (!$('fArea').value) { $('fArea').value = area; settle('fArea'); }
+        if (!$('fCity').value) { $('fCity').value = city; settle('fCity'); paintCity(); }
         if (!address) $('addrBox').open = true;
         paintAddrSum();
       }
@@ -1085,7 +1153,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
           if (tempMarker) tempMarker.remove();
           tempMarker = L.circleMarker([lat, lng], { radius: 10, weight: 3, color: cssVar('var(--accent)'), fillColor: '#fff', fillOpacity: 1, dashArray: '3 3' }).addTo(map);
           const existing = places.find(p => p.address === shortAddress(r.address));
-          existing ? openSheet(existing.id) : openNew(lat, lng, shortAddress(r.address, r.display_name), true, areaOf(r.address));
+          existing ? openSheet(existing.id) : openNew(lat, lng, shortAddress(r.address, r.display_name), true, areaOf(r.address), r.address.city || r.address.town || r.address.village || r.address.hamlet || '');
         }
       };
     } catch {
@@ -1126,10 +1194,15 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   $('fNotes').addEventListener('input', paintNoteChips);
   // The address folds away under the title; the summary line says what is in it.
   function paintAddrSum() {
-    const a = $('fAddress').value.trim(), n = $('fArea').value.trim();
-    $('addrSum').textContent = [a ? a.split(',')[0] : 'Missing, tap to add', n].filter(Boolean).join(' · ');
+    const a = $('fAddress').value.trim(), c = $('fCity').value.trim(), n = $('fArea').value.trim();
+    $('addrSum').textContent = [a ? a.split(',')[0] : 'Missing, tap to add', c, n].filter(Boolean).join(' · ');
   }
-  ['fAddress', 'fArea'].forEach(id => $(id).addEventListener('input', paintAddrSum));
+  function paintCity() {
+    const c = $('fCity').value.trim();
+    $('sheetCity').textContent = c; $('sheetCity').hidden = !c;
+  }
+  ['fAddress', 'fArea', 'fCity'].forEach(id => $(id).addEventListener('input', paintAddrSum));
+  $('fCity').addEventListener('input', paintCity);
   $('quickGo').addEventListener('click', e => {
     const b = e.target.closest('[data-quick]'); if (!b) return;
     selStatus = b.dataset.quick; paintStatus();
@@ -1150,20 +1223,21 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
                  <a href="sms:${esc(phone)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4V5Z"/></svg>Text</a>` : ''}
       ${p ? `<button type="button" id="showOnMap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="10" r="3"/><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11Z"/></svg>Show on map</button>` : ''}`;
     $('quick').insertAdjacentHTML('beforeend', `<button type="button" id="startWalkBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="13" cy="4" r="2"/><path d="m9 21 2-6 3 3v3M7 12l2-4 4 1 2 4 3 1M11 15l-1-4"/></svg>Start walk here</button>`);
-    $('startWalkBtn').onclick = () => startWalk(lat, lng, $('fAddress').value.trim(), $('fArea').value.trim());
+    $('startWalkBtn').onclick = () => { const a = $('fAddress').value.trim(), n = $('fArea').value.trim(); guardLeave(() => startWalk(lat, lng, a, n)); };
     const som = $('showOnMap');
-    if (som) som.onclick = () => { closeSheet(); showTab('map'); map.setView([p.lat, p.lng], 18); };
+    if (som) som.onclick = () => guardLeave(() => { closeSheet(); showTab('map'); map.setView([p.lat, p.lng], 18); });
   }
 
-  function openNew(lat, lng, address, known, area) {
+  function openNew(lat, lng, address, known, area, city) {
     draft = { lat, lng };
     selStatus = ''; paintStatus();
     $('fAddress').value = known ? address : ''; $('fAddress').placeholder = 'Looking up…'; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = address; $('sheetSub').textContent = 'New address';
-    $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
+    $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fCity').value = city || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
-    $('addrBox').open = false; paintAddrSum(); paintNoteChips();
-    fillQuick(null); showSheet('sheet');
+    $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
+    fillQuick(null); showSheet('sheet'); markClean();
+    if (known && !city) cityInto(lat, lng);
   }
 
   function openSheet(id) {
@@ -1174,14 +1248,40 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('fAddress').value = p.address; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = p.address;
     $('sheetSub').textContent = `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
-    $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
+    $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fCity').value = p.city || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
     const h = (p.history || []).slice().reverse();
     $('historyWrap').hidden = !h.length;
     $('history').innerHTML = h.map(x => { const s = statusOf(x.status); return `<li style="--c:${s.color}"><span class="dot"></span><time>${fmtDateTime(x.t)}</time>${s.label}</li>`; }).join('');
     $('deleteBtn').hidden = false; resetDelete();
-    $('addrBox').open = false; paintAddrSum(); paintNoteChips();
-    fillQuick(p); showSheet('sheet');
+    $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
+    fillQuick(p); showSheet('sheet'); markClean();
+    if (p.city == null) cityInto(p.lat, p.lng);
   }
+
+  // Unsaved changes: leaving the address sheet after typing or picking something asks first, with Save as
+  // the default. Fields the map fills in on its own (address, city, neighborhood) don't count as changes.
+  const FORM_FIELDS = ['fName', 'fPhone', 'fNotes', 'fAddress', 'fCity', 'fArea', 'fBiz'];
+  let clean = {};
+  const fieldVal = id => id === 'status' ? selStatus : $(id).value.trim();
+  function markClean() { clean = {}; ['status', ...FORM_FIELDS].forEach(k => (clean[k] = fieldVal(k))); }
+  function settle(id) { clean[id] = fieldVal(id); }
+  const isDirty = () => openSheetId === 'sheet' && !!draft && ['status', ...FORM_FIELDS].some(k => clean[k] !== fieldVal(k));
+  let leaveThen = null;
+  function guardLeave(fn) {
+    if (!isDirty()) return fn();
+    leaveThen = fn;
+    $('leaveSub').textContent = draft.id ? 'Your changes to this address are not saved yet.' : 'This address is not saved yet.';
+    $('leaveAsk').hidden = false; $('leaveSave').focus();
+  }
+  function hideLeave() { $('leaveAsk').hidden = true; const fn = leaveThen; leaveThen = null; return fn; }
+  $('leaveSave').addEventListener('click', () => {
+    const fn = hideLeave();
+    $('visitForm').requestSubmit();
+    if (openSheetId !== 'sheet' && fn) fn();   // saved; a missing address keeps the sheet open instead
+  });
+  $('leaveDiscard').addEventListener('click', () => { const fn = hideLeave(); closeSheet(); if (fn) fn(); });
+  $('leaveAsk').addEventListener('click', e => { if (e.target === $('leaveAsk')) hideLeave(); });
+  window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
   let openSheetId = null;
   function showSheet(id) { $('scrim').hidden = false; $(id).hidden = false; openSheetId = id; if (id === 'sheet') updateSaveNext(); }
@@ -1190,10 +1290,14 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('scrim').hidden = true; openSheetId = null; draft = null;
     if (tempMarker) { tempMarker.remove(); tempMarker = null; }
   }
-  $('scrim').addEventListener('click', closeSheet);
-  $('closeSheet').addEventListener('click', closeSheet);
+  $('scrim').addEventListener('click', () => guardLeave(closeSheet));
+  $('closeSheet').addEventListener('click', () => guardLeave(closeSheet));
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheet));
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && openSheetId) closeSheet(); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (!$('leaveAsk').hidden) hideLeave();
+    else if (openSheetId) guardLeave(closeSheet);
+  });
 
   $('visitForm').addEventListener('submit', e => {
     e.preventDefault();
@@ -1203,7 +1307,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const wid = draft.walkId;
     const now = Date.now();
     const isBiz = !$('bizWrap').hidden;
-    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
+    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
     let p = draft.id && places.find(x => x.id === draft.id);
     if (p) {
       // Log a visit when the status changes, or when the door is knocked again on a new day.
@@ -1319,7 +1423,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const out = [];
     for (const p of places) {
       if (af !== 'all' && areaName(p) !== af) continue;
-      if (q && ![p.address, p.biz, p.name, p.phone, p.notes, p.area].some(v => (v || '').toLowerCase().includes(q))) continue;
+      if (q && ![p.address, p.biz, p.name, p.phone, p.notes, p.area, p.city].some(v => (v || '').toLowerCase().includes(q))) continue;
       const hist = p.history || [];
       if (!hist.length) {
         // Planned doors have no visit yet; show them when no date limit is set.
@@ -1631,6 +1735,99 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     );out tags geom;`;
     return overpass(q);
   }
+
+  // ---------- House outlines ----------
+  // From street level every building is outlined with its house number inside, so a door can be found and
+  // picked straight off the map. Shapes come from the same OpenFreeMap tiles the route builder reads; each
+  // tile is fetched once. Zoomed out, the pins and their groups take over again.
+  const OUTLINE_FROM = 17, OUTLINE_Z = 14;
+  map.createPane('outlines').style.zIndex = 390;   // above the base map, under route lines and pins
+  map.createPane('houseNums').style.zIndex = 450;
+  map.getPane('houseNums').style.pointerEvents = 'none';
+  const outlineRenderer = L.svg({ pane: 'outlines', padding: 0.3 });
+  const outlineLayer = L.layerGroup().addTo(map);
+  const outlineTiles = new Map();   // "x/y" -> Promise<[{ ring, box, num, at }]>
+  let outlinesShown = [];
+  function inRing(lat, lng, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [ay, ax] = ring[i], [by, bx] = ring[j];
+      if ((ay > lat) !== (by > lat) && lng < (bx - ax) * (lat - ay) / (by - ay) + ax) inside = !inside;
+    }
+    return inside;
+  }
+  function outlineTile(x, y) {
+    const k = `${x}/${y}`;
+    if (!outlineTiles.has(k)) outlineTiles.set(k, (async () => {
+      const tpl = await tileTemplate(), n = 2 ** OUTLINE_Z;
+      const res = await fetch(tpl.replace('{z}', OUTLINE_Z).replace('{x}', x).replace('{y}', y));
+      if (!res.ok) throw new Error(`map tiles busy (${res.status})`);
+      const layers = readTile(new Uint8Array(await res.arrayBuffer()));
+      const toLL = (L, [px, py]) => {
+        const fx = x + px / L.extent, fy = y + py / L.extent;
+        return [Math.atan(Math.sinh(Math.PI * (1 - 2 * fy / n))) * 180 / Math.PI, fx / n * 360 - 180];
+      };
+      const homes = [], bl = layers.building, hn = layers.housenumber;
+      if (bl) for (const F of bl.feats) for (const r of tileParts(F.geom)) {
+        let a = 0; for (let i = 0; i < r.length; i++) { const [x1, y1] = r[i], [x2, y2] = r[(i + 1) % r.length]; a += x1 * y2 - x2 * y1; }
+        if (a <= 0 || r.length < 3) continue;   // holes wind the other way
+        const ring = r.map(pt => toLL(bl, pt)), lats = ring.map(q => q[0]), lngs = ring.map(q => q[1]);
+        homes.push({ ring, box: [Math.min(...lats), Math.min(...lngs), Math.max(...lats), Math.max(...lngs)], num: '', at: null });
+      }
+      // Each house number lands in the building drawn around it; numbers with no building stand alone.
+      if (hn) for (const F of hn.feats) {
+        let num = ''; for (let i = 0; i < F.tags.length; i += 2) if (hn.keys[F.tags[i]] === 'housenumber') num = String(hn.values[F.tags[i + 1]]);
+        if (!num) continue;
+        for (const part of tileParts(F.geom)) {
+          const [lat, lng] = toLL(hn, part[0]);
+          const h = homes.find(b => !b.num && lat >= b.box[0] && lat <= b.box[2] && lng >= b.box[1] && lng <= b.box[3] && inRing(lat, lng, b.ring));
+          if (h) { h.num = num; h.at = [lat, lng]; } else homes.push({ ring: null, box: [lat, lng, lat, lng], num, at: [lat, lng] });
+        }
+      }
+      return homes;
+    })().catch(e => { outlineTiles.delete(k); throw e; }));
+    return outlineTiles.get(k);
+  }
+  const labelAt = h => h.at || [(h.box[0] + h.box[2]) / 2, (h.box[1] + h.box[3]) / 2];
+  let outlineRun = 0;
+  async function drawOutlines() {
+    const run = ++outlineRun, z = map.getZoom();
+    if (z < OUTLINE_FROM || $('mapView').hidden) { outlineLayer.clearLayers(); outlinesShown = []; return; }
+    const b = map.getBounds().pad(0.15), n = 2 ** OUTLINE_Z;
+    const tx = ln => Math.floor((ln + 180) / 360 * n);
+    const ty = la => Math.floor((1 - Math.log(Math.tan(la * Math.PI / 180) + 1 / Math.cos(la * Math.PI / 180)) / Math.PI) / 2 * n);
+    const jobs = [];
+    for (let x = tx(b.getWest()); x <= tx(b.getEast()); x++) for (let y = ty(b.getNorth()); y <= ty(b.getSouth()); y++) jobs.push(outlineTile(x, y).catch(() => []));
+    const all = (await Promise.all(jobs)).flat();
+    if (run !== outlineRun) return;
+    const [s, w, nn, e] = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
+    outlinesShown = all.filter(h => h.box[2] >= s && h.box[0] <= nn && h.box[3] >= w && h.box[1] <= e);
+    outlineLayer.clearLayers();
+    const shown = places.filter(p => !hidden.has(statusOf(p.status).key) && p.lat >= s && p.lat <= nn && p.lng >= w && p.lng <= e);
+    for (const h of outlinesShown) {
+      let tone = null;
+      if (h.ring) {
+        const p = shown.find(q => q.lat >= h.box[0] && q.lat <= h.box[2] && q.lng >= h.box[1] && q.lng <= h.box[3] && inRing(q.lat, q.lng, h.ring));
+        if (p) tone = cssVar(statusOf(p.status).color);
+        L.polygon(h.ring, { renderer: outlineRenderer, pane: 'outlines', interactive: false, color: tone || '#33414f', weight: tone ? 2.4 : 1.4, opacity: .9, fillColor: tone || '#ffffff', fillOpacity: tone ? .32 : .28 }).addTo(outlineLayer);
+      }
+      if (!h.num) continue;
+      // Skip a number that would spill well past a small building at this zoom.
+      if (h.ring && z < 19) {
+        const p1 = map.project([h.box[0], h.box[1]], z), p2 = map.project([h.box[2], h.box[3]], z);
+        if (Math.abs(p2.x - p1.x) < h.num.length * 5.5) continue;
+      }
+      L.marker(labelAt(h), { pane: 'houseNums', interactive: false, keyboard: false,
+        icon: L.divIcon({ className: 'house-num', html: `<span>${esc(h.num)}</span>`, iconSize: null }) }).addTo(outlineLayer);
+    }
+  }
+  // The outlined building under a tap, if any.
+  function outlineHit(lat, lng) {
+    if (map.getZoom() < OUTLINE_FROM) return null;
+    return outlinesShown.find(h => h.ring && lat >= h.box[0] && lat <= h.box[2] && lng >= h.box[1] && lng <= h.box[3] && inRing(lat, lng, h.ring)) || null;
+  }
+  map.on('moveend', drawOutlines);
+  drawOutlines();
 
   // Flat x/y in meters around the start point; plenty accurate over a few hundred meters.
   function projector(lat0, lng0) {
@@ -2282,7 +2479,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     else if (h.biz) {
       openNew(h.lat, h.lng, h.addr || 'Finding address…', !!h.addr, '');
       if (!h.addr) lookupInto(h.lat, h.lng);
-      $('fBiz').value = h.biz; $('bizWrap').hidden = false; $('sheetSub').textContent = h.cat || 'Business';
+      $('fBiz').value = h.biz; settle('fBiz'); $('bizWrap').hidden = false; $('sheetSub').textContent = h.cat || 'Business';
     } else {
       const full = h.num ? [`${h.num} ${h.street}`, walk.start.suffix].filter(Boolean).join(', ') : 'Finding address…';
       openNew(h.lat, h.lng, full, !!h.num, walk.start.area);
@@ -3845,7 +4042,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     seg.hidden = t === 'log'; $('segLog').hidden = true; seg.style.gridTemplateColumns = '1fr 1fr';
     if (t === 'log') listMode('log');
     else if (t === 'routes' && mode === 'log') listMode(walk ? 'walk' : 'plan');
-    if (t === 'map') setTimeout(() => map.invalidateSize(), 0);
+    if (t === 'map') setTimeout(() => { map.invalidateSize(); drawOutlines(); }, 0);
     if (t === 'events') { if (evf.from === 'me' && !myLoc) locateMe(); renderEvents(); loadFeed().then(() => { if (tabNow === 'events') renderEvents(); }); }
     try { localStorage.setItem('canvass-log.tab', t); } catch {}
   }
@@ -3866,8 +4063,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   const stamp = () => new Date().toISOString().slice(0, 10);
   $('exportCsv').addEventListener('click', () => {
     const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['Address', 'Neighborhood', 'Name', 'Phone', 'Status', 'Notes', 'Last updated', 'Visits', 'Latitude', 'Longitude'];
-    const lines = places.map(p => [p.address, p.area, p.name, p.phone, statusOf(p.status).label, p.notes, new Date(p.updated).toLocaleString(), (p.history || []).length, p.lat.toFixed(6), p.lng.toFixed(6)].map(q).join(','));
+    const head = ['Address', 'City', 'Neighborhood', 'Name', 'Phone', 'Status', 'Notes', 'Last updated', 'Visits', 'Latitude', 'Longitude'];
+    const lines = places.map(p => [p.address, p.city, p.area, p.name, p.phone, statusOf(p.status).label, p.notes, new Date(p.updated).toLocaleString(), (p.history || []).length, p.lat.toFixed(6), p.lng.toFixed(6)].map(q).join(','));
     download(`canvass-log-${stamp()}.csv`, [head.map(q).join(','), ...lines].join('\n'), 'text/csv');
   });
   $('exportJson').addEventListener('click', () => backup());
@@ -3896,7 +4093,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   });
 
   // ---------- Boot ----------
-  function refresh() { legend(); drawPins(); areaOptions(); renderTopCount(); renderList(); renderWalk(); drawWalk(); renderPlan(); renderHome(); }
+  function refresh() { legend(); drawPins(); drawOutlines(); areaOptions(); renderTopCount(); renderList(); renderWalk(); drawWalk(); renderPlan(); renderHome(); }
   load(); listMode(mode); refresh(); backfillAreas(); renderInbox();
   loadFeed().then(() => { renderInbox(); if (tabNow === 'events') renderEvents(); });
   window.addEventListener('online', backfillAreas);
