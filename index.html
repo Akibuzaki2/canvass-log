@@ -1025,24 +1025,75 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   }
   // Nearby first: results inside about 70 miles of the map, then anywhere if nothing is close.
   // Exact house matches sort to the top, ahead of the street or highway the number sits on.
-  async function search(q) {
+  // When the map data has no such house, try the query tidied up ("2112 west I nampa" → "2112 W I St, nampa"),
+  // then the US Census address lookup, which knows nearly every US house number.
+  async function search(q, qNum) {
     const c = map.getCenter();
     const vb = [c.lng - 1, c.lat + 1, c.lng + 1, c.lat - 1].join(',');
-    const get = async extra => {
-      const r = await fetch(`${NOMINATIM}/search?format=jsonv2&addressdetails=1&limit=8&viewbox=${vb}${extra}&q=${encodeURIComponent(q)}`, { headers: { 'Accept-Language': navigator.language || 'en' } });
+    const get = async (text, extra) => {
+      const r = await fetch(`${NOMINATIM}/search?format=jsonv2&addressdetails=1&limit=8&viewbox=${vb}${extra}&q=${encodeURIComponent(text)}`, { headers: { 'Accept-Language': navigator.language || 'en' } });
       if (!r.ok) throw new Error('search failed');
       return r.json();
     };
-    let res = await get('&bounded=1');
-    if (!res.length) res = await get('');
+    const find = async text => { const r = await get(text, '&bounded=1'); return r.length ? r : get(text, ''); };
+    const hit = list => list.some(r => r.address && (r.address.house_number || '').toLowerCase() === qNum.toLowerCase());
+    let res = await find(q);
+    if (qNum && !hit(res)) {
+      const v = tidyQuery(q);
+      if (v && v !== q) {
+        await new Promise(ok => setTimeout(ok, 1100)); // Nominatim allows one lookup a second
+        const more = await find(v).catch(() => []), seen = new Set(res.map(r => r.osm_type + r.osm_id));
+        res = [...more.filter(r => !seen.has(r.osm_type + r.osm_id)), ...res];
+      }
+      if (!hit(res)) { const cr = await censusFind(v || q).catch(() => null); if (cr) res.unshift(cr); }
+    }
     const has = r => r.address && r.address.house_number ? 0 : 1;
     return res.map((r, i) => [r, i]).sort((a, b) => has(a[0]) - has(b[0]) || a[1] - b[1]).map(x => x[0]);
+  }
+  const DIRS = { north: 'N', south: 'S', east: 'E', west: 'W', northeast: 'NE', northwest: 'NW', southeast: 'SE', southwest: 'SW' };
+  const SUFFIX = /^(st|street|ave|avenue|av|rd|road|dr|drive|ct|court|ln|lane|pl|place|blvd|boulevard|way|cir|circle|loop|pkwy|parkway|ter|terrace|trl|trail|hwy|highway|cv|cove|sq|square|xing|run|row|walk|path|pass|pt|point)$/i;
+  // "2112 west I nampa idaho" → "2112 W I St, nampa idaho": short direction, a street type after a lettered
+  // or numbered street, and a comma before the town so the lookup reads the street apart from it.
+  function tidyQuery(q) {
+    const m = q.trim().match(/^(\d+[A-Za-z]?)\s+(.+)$/); if (!m) return '';
+    const [head, ...tail] = m[2].split(','), w = head.trim().split(/\s+/).filter(x => !/^in$/i.test(x));
+    if (DIRS[w[0].toLowerCase()]) w[0] = DIRS[w[0].toLowerCase()];
+    const named = /^(N|S|E|W|NE|NW|SE|SW)$/i.test(w[0]) ? 1 : 0, name = w[named] || '';
+    let end = w.findIndex((x, i) => i > named && SUFFIX.test(x));
+    if (end < 0 && (/^[A-Za-z]$/.test(name) || /^\d+(st|nd|rd|th)?$/i.test(name))) { w.splice(named + 1, 0, 'St'); end = named + 1; }
+    if (end >= 0 && end < w.length - 1) w.splice(end + 1, 0, ',');
+    return [`${m[1]} ${w.join(' ').replace(/ ,/, ',')}`, ...tail].join(',').replace(/,\s*,/g, ',').replace(/,\s*$/, '').trim();
+  }
+  // US Census geocoder: an estimate along the street's address range. Its server may not allow
+  // direct browser reads, so fall back to a script-tag (JSONP) read; either failing just means no result.
+  function jsonp(url, ms = 7000) {
+    return new Promise((ok, no) => {
+      const cb = 'cz' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), el = document.createElement('script');
+      const done = v => { clearTimeout(t); delete window[cb]; el.remove(); v ? ok(v) : no(new Error('no answer')); };
+      const t = setTimeout(() => done(null), ms);
+      window[cb] = done; el.onerror = () => done(null);
+      el.src = `${url}&callback=${cb}`; document.head.appendChild(el);
+    });
+  }
+  async function censusFind(q) {
+    const url = `https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?benchmark=Public_AR_Current&format=json&address=${encodeURIComponent(q)}`;
+    let j;
+    try { const r = await fetch(url); if (!r.ok) throw new Error(); j = await r.json(); }
+    catch { j = await jsonp(url); }
+    const m = j && j.result && (j.result.addressMatches || [])[0]; if (!m || !m.coordinates) return null;
+    const c = m.addressComponents || {}, cap = s => (s || '').toLowerCase().replace(/\b[a-z]/g, x => x.toUpperCase());
+    const num = ((m.matchedAddress || '').match(/^\d+[A-Za-z]?/) || [''])[0];
+    const road = cap([c.preDirection, c.preType, c.streetName, c.suffixType, c.suffixDirection].filter(Boolean).join(' '));
+    if (!num || !road) return null;
+    const address = { house_number: num, road, city: cap(c.city), state_code: c.state || '', postcode: c.zip || '' };
+    return { lat: m.coordinates.y, lon: m.coordinates.x, name: '', osm_type: 'census', osm_id: num + road, address, display_name: shortAddress(address), census: true };
   }
   // "106 Willow Creek Dr, …" and "106 willow creek drive middleton" both come down to "106 willow creek dr".
   const addrKey = a => { const m = (a || '').split(',')[0].trim().match(/^(\d+[a-z]?)\s+(.+)$/i); return m ? `${m[1].toLowerCase()} ${normStreet(m[2])}` : ''; };
   function loggedMatches(q) {
     const qn = normStreet(q); if (!/^\d/.test(qn)) return [];
-    return places.filter(p => { const k = addrKey(p.address); return k && (qn === k || qn.startsWith(k + ' ') || k.startsWith(qn)); }).slice(0, 4);
+    const qt = normStreet((tidyQuery(q) || '').split(',')[0]);
+    return places.filter(p => { const k = addrKey(p.address); return k && (qn === k || qn.startsWith(k + ' ') || k.startsWith(qn) || qt === k); }).slice(0, 4);
   }
   // A logged house at this address: same number and street, or the same number within a short walk.
   function placeAt(addr, lat, lng) {
@@ -1237,6 +1288,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('searchInput').blur();
     const ul = $('results'); ul.hidden = false;
     const mine = loggedMatches(q);
+    const qKey = normStreet((tidyQuery(q) || q).split(',')[0]);
+    const exact = mine.filter(p => { const k = addrKey(p.address); return k && (qKey === k || normStreet(q).startsWith(k + ' ') || normStreet(q) === k); });
     const mineHtml = mine.map(p => `<li><button type="button" data-p="${esc(p.id)}"><span class="dotn" style="--c:${statusOf(p.status).color}"></span>${esc(p.address.split(',')[0])}<span class="sub">In your log · ${esc(statusOf(p.status).label)}${p.name ? ` · ${esc(p.name)}` : ''}</span></button></li>`).join('');
     ul.innerHTML = mineHtml + '<li class="msg">Searching…</li>';
     const qNum = (q.match(/^\s*(\d+[A-Za-z]?)\b/) || [])[1] || '';
@@ -1246,9 +1299,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (own) { const p = places.find(x => x.id === own.dataset.p); closeResults(); if (p) { closeSheet(); showTab('map'); map.setView([p.lat, p.lng], 18); openSheet(p.id); showHere(p.lat, p.lng, p.address); } return; }
       const b = ev.target.closest('button[data-i]'); if (!b) return;
       const r = res[+b.dataset.i]; closeResults(); showTab('map');
-      const lat = +r.lat, lng = +r.lon, a = r.address || {};
+      let lat = +r.lat, lng = +r.lon; const a = r.address || {};
       const city = a.city || a.town || a.village || a.hamlet || '';
       if (a.house_number) {
+        // The Census point sits on the street; move it onto the house outline with that number when the map has one.
+        if (r.census) { const h = await numberOnMap(a.house_number, [lat - .0012, lat + .0012, lng - .0016, lng + .0016]).catch(() => null); if (h) [lat, lng] = labelAt(h); }
         const p = placeAt(shortAddress(a), lat, lng);
         p ? (map.setView([p.lat, p.lng], 18), openSheet(p.id)) : openFound(lat, lng, a.house_number, shortAddress(a, r.display_name), areaOf(a), city);
         return showHere(p ? p.lat : lat, p ? p.lng : lng, p ? p.address : shortAddress(a, r.display_name));
@@ -1268,13 +1323,18 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (r.boundingbox) { const [s, n, w, ea] = r.boundingbox.map(Number); map.fitBounds([[s, w], [n, ea]], { maxZoom: 18 }); }
       else map.setView([lat, lng], 17);
     };
+    // One house in your log at exactly this address: open it straight away.
+    if (exact.length === 1) { ul.innerHTML = mineHtml; ul.querySelector('button[data-p]').click(); return; }
     try {
-      res = await search(q);
+      res = await search(q, qNum);
       if (!res.length && !mine.length) { ul.innerHTML = '<li class="msg">No places found. Try adding the town or ZIP code.</li>'; return; }
       ul.innerHTML = mineHtml + res.map((r, i) => {
         const main = shortAddress(r.address, r.display_name).split(', ')[0] || r.name;
         return `<li><button type="button" data-i="${i}">${esc(r.name || main)}<span class="sub">${esc(r.display_name)}</span></button></li>`;
       }).join('');
+      // The top result is that exact house number, and only one place has it: open it, no extra tap.
+      const same = res.filter(r => r.address && qNum && (r.address.house_number || '').toLowerCase() === qNum.toLowerCase());
+      if (!mine.length && same.length === 1 && res[0] === same[0]) ul.querySelector('button[data-i="0"]').click();
     } catch {
       ul.innerHTML = mineHtml + '<li class="msg">Search needs an internet connection. Try again in a moment.</li>';
     }
@@ -2133,7 +2193,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   }
   const centroid = g => [g.reduce((s, p) => s + p.lat, 0) / g.length, g.reduce((s, p) => s + p.lon, 0) / g.length];
   function polyArea(xy) { let a = 0; for (let i = 0; i < xy.length; i++) { const [x1, y1] = xy[i], [x2, y2] = xy[(i + 1) % xy.length]; a += x1 * y2 - x2 * y1; } return Math.abs(a / 2); }
-  const normStreet = s => (s || '').toLowerCase().replace(/\b(street|st)\b/g, 'st').replace(/\b(avenue|ave)\b/g, 'ave').replace(/\b(road|rd)\b/g, 'rd').replace(/\b(drive|dr)\b/g, 'dr').replace(/\b(court|ct)\b/g, 'ct').replace(/\b(lane|ln)\b/g, 'ln').replace(/\b(place|pl)\b/g, 'pl').replace(/\b(boulevard|blvd)\b/g, 'blvd').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  const normStreet = s => (s || '').toLowerCase().replace(/\b(street|st)\b/g, 'st').replace(/\b(avenue|ave)\b/g, 'ave').replace(/\b(road|rd)\b/g, 'rd').replace(/\b(drive|dr)\b/g, 'dr').replace(/\b(court|ct)\b/g, 'ct').replace(/\b(lane|ln)\b/g, 'ln').replace(/\b(place|pl)\b/g, 'pl').replace(/\b(boulevard|blvd)\b/g, 'blvd').replace(/\b(north|south|east|west|northeast|northwest|southeast|southwest)\b/g, d => DIRS[d].toLowerCase()).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
   function splitAddress(a) {
     const first = (a || '').split(',')[0].trim();
     const m = first.match(/^(\d+[a-z]?)\s+(.+)$/i);
