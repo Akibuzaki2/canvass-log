@@ -1040,8 +1040,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     let res = await find(q);
     if (qNum && !hit(res)) {
       // Photon reads the same map data but forgives typos and loose street names ("2112 ibis nampa").
+      // Esri's address points include new subdivisions the free map data and the Census haven't caught up with.
       const seen0 = new Set(res.map(r => r.osm_type + r.osm_id));
-      res = [...res, ...(await photonFind(q, c).catch(() => [])).filter(r => !seen0.has(r.osm_type + r.osm_id))];
+      const [ph, es] = await Promise.all([photonFind(q, c).catch(() => []), esriFind(q, c, qNum).catch(() => [])]);
+      res = [...es, ...res, ...ph.filter(r => !seen0.has(r.osm_type + r.osm_id))];
     }
     if (qNum && !hit(res)) {
       const v = tidyQuery(q);
@@ -1064,6 +1066,17 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     }
     const has = r => r.address && r.address.house_number ? 0 : 1;
     return res.map((r, i) => [r, i]).sort((a, b) => has(a[0]) - has(b[0]) || a[1] - b[1]).map(x => x[0]);
+  }
+  async function esriFind(q, c, num) {
+    const r = await fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=5&location=${c.lng},${c.lat}&outFields=Addr_type,AddNum,City,RegionAbbr,Postal&SingleLine=${encodeURIComponent(q)}`);
+    if (!r.ok) return [];
+    return ((await r.json()).candidates || [])
+      .filter(k => k.attributes && /^(PointAddress|StreetAddress|Subaddress)$/.test(k.attributes.Addr_type) && String(k.attributes.AddNum).toLowerCase() === num.toLowerCase() && k.score >= 85)
+      .slice(0, 2).map(k => {
+        const at = k.attributes, road = (k.address || '').split(',')[0].replace(/^\S+\s+/, '');
+        const address = { house_number: String(at.AddNum), road, city: at.City || '', state_code: at.RegionAbbr || '', postcode: at.Postal || '' };
+        return { lat: k.location.y, lon: k.location.x, name: '', osm_type: 'esri', osm_id: k.address, address, display_name: shortAddress(address), census: true };
+      });
   }
   async function photonFind(q, c) {
     const r = await fetch(`https://photon.komoot.io/api/?limit=6&lang=en&lat=${c.lat}&lon=${c.lng}&q=${encodeURIComponent(q)}`);
@@ -1337,7 +1350,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       let lat = +r.lat, lng = +r.lon; const a = r.address || {};
       const city = a.city || a.town || a.village || a.hamlet || '';
       if (a.house_number) {
-        // The Census point sits on the street; move it onto the house outline with that number when the map has one.
+        // A Census or Esri point can sit on the street or the lot; move it onto the house outline with that number when the map has one.
         if (r.census) { const h = await numberOnMap(a.house_number, [lat - .0012, lat + .0012, lng - .0016, lng + .0016]).catch(() => null); if (h) [lat, lng] = labelAt(h); }
         const p = placeAt(shortAddress(a), lat, lng);
         p ? (map.setView([p.lat, p.lng], 18), openSheet(p.id)) : openFound(lat, lng, a.house_number, shortAddress(a, r.display_name), areaOf(a), city);
