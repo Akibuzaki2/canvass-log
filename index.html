@@ -138,6 +138,7 @@ main { flex: 1; min-height: 0; position: relative; }
   background: var(--card); color: var(--ink); display: grid; place-items: center; box-shadow: var(--shadow);
 }
 .fab svg { width: 24px; height: 24px; }
+.fab[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .hint {
   position: absolute; left: 12px; right: 76px; bottom: 16px; z-index: 500;
   background: var(--card); color: var(--ink); border-radius: 12px; padding: 10px 12px;
@@ -549,6 +550,9 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     <div class="hint" id="hint">Tap any house on the map to log a visit.</div>
     <div class="walkbar" id="walkbar" hidden></div>
     <div class="fab-col">
+      <button class="fab" id="photoBtn" aria-label="Show satellite photo" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+      </button>
       <button class="fab" id="locateBtn" aria-label="Go to my location">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
       </button>
@@ -978,10 +982,24 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     return parts.join(', ') || fallback || '';
   }
   async function reverse(lat, lng) {
-    const r = await fetch(`${NOMINATIM}/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`, { headers: { 'Accept-Language': navigator.language || 'en' } });
-    if (!r.ok) throw new Error('lookup failed');
-    const j = await r.json();
-    return { address: shortAddress(j.address, j.display_name), houseNumber: j.address && j.address.house_number, area: areaOf(j.address), city: await cityOf(j.address) };
+    const [j, es] = await Promise.all([
+      fetch(`${NOMINATIM}/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`, { headers: { 'Accept-Language': navigator.language || 'en' } }).then(r => r.ok ? r.json() : null).catch(() => null),
+      esriReverse(lat, lng).catch(() => null)]);
+    if (!j && !es) throw new Error('lookup failed');
+    const city = j ? await cityOf(j.address) : '';
+    // Newer subdivisions have no house numbers in the free map data yet. Esri's address points do, so the
+    // house you tapped takes Esri's address when it sits on that house, or when the map data has no number.
+    const own = j && j.address && j.address.house_number;
+    if (es && (es.near || !own)) return { address: es.address, houseNumber: es.num, area: j ? areaOf(j.address) : '', city: es.city || city };
+    return { address: shortAddress(j.address, j.display_name), houseNumber: own, area: areaOf(j.address), city };
+  }
+  async function esriReverse(lat, lng) {
+    const r = await fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=json&featureTypes=PointAddress,StreetAddress&location=${lng},${lat}`);
+    const a = r.ok && (await r.json()).address;
+    if (!a || !a.AddNum || a.CountryCode !== 'USA') return null;
+    const d = km([lat, lng], [a.Y, a.X]);
+    if (d > 0.08) return null;
+    return { address: [a.Address, a.City, [a.RegionAbbr, a.Postal].filter(Boolean).join(' ')].filter(Boolean).join(', '), num: a.AddNum, city: a.City || '', near: a.Addr_type === 'PointAddress' && d < 0.03 };
   }
   // The town on the mail. Homes outside city limits only carry a county in OpenStreetMap, so those take
   // the post office's town for their ZIP code instead (looked up once per ZIP and remembered).
@@ -1170,6 +1188,19 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
+  // Satellite photo: shows houses that are too new for the street map's outlines. Street names ride on top.
+  const PHOTO_KEY = 'canvass-log.photo';
+  const photo = L.layerGroup([
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }),
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19 }),
+  ]);
+  function setPhoto(on) {
+    on ? photo.addTo(map) : photo.remove();
+    $('photoBtn').setAttribute('aria-pressed', String(on));
+    try { localStorage.setItem(PHOTO_KEY, on ? '1' : ''); } catch {}
+  }
+  $('photoBtn').addEventListener('click', () => setPhoto(!map.hasLayer(photo)));
+  try { if (localStorage.getItem(PHOTO_KEY)) setPhoto(true); } catch {}
   map.on('moveend', () => { const c = map.getCenter(); try { localStorage.setItem(VIEW_KEY, JSON.stringify({ lat: c.lat, lng: c.lng, z: map.getZoom() })); } catch {} });
 
   const pinLayer = L.layerGroup().addTo(map);
