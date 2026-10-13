@@ -507,9 +507,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .pin-svg { display: block; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.35)); }
 .chip .pin-svg { filter: none; flex: none; }
 .pin.cluster svg { display: block; filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
-.wdot { display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 2.5px var(--st-planned), 0 1px 2px rgba(0,0,0,.25); }
+.wdot { display: block; width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,.35); box-shadow: inset 0 0 0 3px var(--st-planned), 0 1px 2px rgba(0,0,0,.25); }
 .wdot.done { opacity: .5; }
 .nextnum { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #1d2a3a; color: #fff; font: 700 14px/1 var(--font-label); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.nextnum { position: relative; }
+.nextnum::after { content: ''; position: absolute; left: 50%; top: 100%; margin: 1px 0 0 -5px; border: 5px solid transparent; border-top-color: #fff; border-bottom: 0; }
 .nextnum.first { background: var(--accent); color: #fff; width: 26px; height: 26px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent), 0 1px 4px rgba(0,0,0,.35); }
 .arrow { display: block; width: 12px; height: 12px; background: no-repeat center / 12px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 2.5 8 6l-5 3.5' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 
@@ -1186,7 +1188,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   let saved = null; try { saved = JSON.parse(localStorage.getItem(VIEW_KEY)); } catch {}
   const map = L.map('map', { zoomControl: false, tap: true }).setView(saved ? [saved.lat, saved.lng] : [39.5, -98.35], saved ? saved.z : 4);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, extra buildings Microsoft via <a href="https://overturemaps.org">Overture</a>'
   }).addTo(map);
   // Satellite photo: shows houses that are too new for the street map's outlines. Street names ride on top.
   const PHOTO_KEY = 'canvass-log.photo';
@@ -2256,6 +2258,14 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         seen.add(key);
         elements.push({ type: 'way', id: key, tags: { building: 'yes' }, geometry: [...geometry, geometry[0]] });
       }));
+      for (const ring of await extraBuildings(x, y)) {
+        const geometry = ring.map(([la, lo]) => ({ lat: la, lon: lo }));
+        const c = { lat: geometry.reduce((s2, g) => s2 + g.lat, 0) / geometry.length, lon: geometry.reduce((s2, g) => s2 + g.lon, 0) / geometry.length };
+        const key = `b${c.lat.toFixed(5)},${c.lon.toFixed(5)}`;
+        if (!near(c) || seen.has(key)) continue;
+        seen.add(key);
+        elements.push({ type: 'way', id: key, tags: { building: 'yes' }, geometry: [...geometry, geometry[0]] });
+      }
     }));
     return { elements };
   }
@@ -2283,6 +2293,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   const OUTLINE_FROM = 17, OUTLINE_Z = 14;
   map.createPane('outlines').style.zIndex = 390;   // above the base map, under route lines and pins
   map.createPane('houseNums').style.zIndex = 450;
+  map.createPane('walkDots').style.zIndex = 440;   // route rings sit under the house numbers so the number stays readable
   map.getPane('houseNums').style.pointerEvents = 'none';
   const outlineRenderer = L.svg({ pane: 'outlines', padding: 0.3 });
   const outlineLayer = L.layerGroup().addTo(map);
@@ -2295,6 +2306,17 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if ((ay > lat) !== (by > lat) && lng < (bx - ax) * (lat - ay) / (by - ay) + ax) inside = !inside;
     }
     return inside;
+  }
+  // Newer homes OpenStreetMap hasn't drawn yet: Microsoft's footprints traced from aerial photos (via Overture Maps),
+  // shipped with the app for the Treasure Valley as one small file per map tile. Rings are [lat, lng] pairs.
+  const extraIndex = fetch('bld/index.json').then(r => r.ok ? r.json() : []).then(a => new Set(a)).catch(() => new Set());
+  const extraTiles = new Map();
+  function extraBuildings(x, y) {
+    const k = `${x}_${y}`;
+    if (!extraTiles.has(k)) extraTiles.set(k, extraIndex.then(ix => ix.has(k) ? fetch(`bld/14/${k}.json`).then(r => r.ok ? r.json() : []) : [])
+      .then(rs => rs.map(f => { const ring = []; let a = 0, b = 0; for (let i = 0; i < f.length; i += 2) { a += f[i]; b += f[i + 1]; ring.push([a / 1e6, b / 1e6]); } return ring; }))
+      .catch(() => { extraTiles.delete(k); return []; }));
+    return extraTiles.get(k);
   }
   function outlineTile(x, y) {
     const k = `${x}/${y}`;
@@ -2313,6 +2335,13 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         if (a <= 0 || r.length < 3) continue;   // holes wind the other way
         const ring = r.map(pt => toLL(bl, pt)), lats = ring.map(q => q[0]), lngs = ring.map(q => q[1]);
         homes.push({ ring, box: [Math.min(...lats), Math.min(...lngs), Math.max(...lats), Math.max(...lngs)], num: '', at: null });
+      }
+      // Homes OpenStreetMap hasn't drawn yet come from the extra footprints, unless a drawn building already covers them.
+      for (const ring of await extraBuildings(x, y)) {
+        const lats = ring.map(q => q[0]), lngs = ring.map(q => q[1]), box = [Math.min(...lats), Math.min(...lngs), Math.max(...lats), Math.max(...lngs)];
+        const c = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
+        if (homes.some(b => c[0] >= b.box[0] && c[0] <= b.box[2] && c[1] >= b.box[1] && c[1] <= b.box[3] && inRing(c[0], c[1], b.ring))) continue;
+        homes.push({ ring, box, num: '', at: null });
       }
       // Each house number lands in the building drawn around it; numbers with no building stand alone.
       if (hn) for (const F of hn.feats) {
@@ -3256,8 +3285,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   // Map: route line, unvisited houses as hollow dots, the next door ringed in orange.
   const walkLayer = L.layerGroup().addTo(map);
   // Small arrowheads every `every` metres along a line, turned to point along it.
-  function arrowsAlong(line, every) {
-    const m = (a, b) => Math.hypot((b[0] - a[0]) * 110540, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180));
+  // Arrows closer than `gap` metres to one already drawn are skipped, so doubled-back stretches don't stack them.
+  const llDist = (a, b) => Math.hypot((b[0] - a[0]) * 110540, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180));
+  function arrowsAlong(line, every, gap = 0, placed = []) {
+    const m = llDist;
     let carry = every / 2;
     for (let i = 1; i < line.length; i++) {
       const a = line[i - 1], b = line[i], d = m(a, b);
@@ -3265,10 +3296,40 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const deg = Math.atan2(-(b[0] - a[0]) * 110540, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180)) * 180 / Math.PI;
       for (let t = carry; t < d; t += every) {
         const f = t / d, at = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+        if (gap && placed.some(q => llDist(q, at) < gap)) continue;
+        placed.push(at);
         L.marker(at, { icon: L.divIcon({ className: 'pin', html: `<span class="arrow" style="transform:rotate(${deg.toFixed(0)}deg)"></span>`, iconSize: [12, 12], iconAnchor: [6, 6] }), interactive: false, keyboard: false }).addTo(walkLayer);
       }
       carry = (carry - d) % every; if (carry < 0) carry += every;
     }
+  }
+  // The piece of the walking line from the door before `nxt` to the third door ahead, within nxt's street section.
+  function walkLeg(nxt) {
+    const s = walk.sections.find(x => x.houses.includes(nxt));
+    if (!s || !s.path || !s.path.length) return null;
+    const pts = [];
+    s.path.forEach((line, li) => line.forEach((p, pi) => pts.push({ p, li, pi })));
+    const k = s.houses.indexOf(nxt);
+    const from = k > 0 ? s.houses[k - 1] : null;
+    const ahead = s.houses.slice(k).filter(h => !doneOnRoute(h)).slice(0, 3), to = ahead[ahead.length - 1];
+    // Nearest path point to a door's curb, searching forward from `after` so a doubled-back street picks the right pass.
+    const near = (h, after) => {
+      const c = h.curb || [h.lat, h.lng];
+      let best = -1, bd = Infinity;
+      for (let i = after; i < pts.length; i++) { const d = llDist(pts[i].p, c); if (d < bd - 0.5) { bd = d; best = i; } if (bd < 4 && d > 60) break; }
+      return best;
+    };
+    const i0 = from ? Math.max(0, near(from, 0)) : 0;
+    const iN = near(nxt, i0), i1 = to && to !== nxt ? near(to, Math.max(i0, iN)) : iN;
+    let end = i1 < 0 ? pts.length - 1 : i1;
+    if (end <= i0) end = Math.min(pts.length - 1, i0 + 1);
+    const out = [];
+    for (let i = i0; i <= end; i++) {
+      const q = pts[i], cur = out[out.length - 1];
+      if (cur && cur.li === q.li) cur.pts.push(q.p); else out.push({ li: q.li, pts: [q.p] });
+    }
+    const lines = out.map(o => o.pts).filter(l => l.length > 1);
+    return lines.length ? lines : null;
   }
   function drawWalk() {
     walkLayer.clearLayers();
@@ -3282,28 +3343,36 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (all.length > 1) { const line = all.map(h => [h.lat, h.lng]); L.polyline(line, { color: accent, weight: 2, opacity: .45, dashArray: '4 6', interactive: false }).addTo(walkLayer); arrowsAlong(line, 400); }
     } else {
       // Walking line: only along mapped streets and paths, orange where doors are left and grey where the street is finished.
-      // Arrows along it point the way to walk. Short thin ticks join each door to its curb.
+      // Arrows show only on the stretch you're walking now (the door before the next one up to the third door ahead),
+      // so streets walked twice or doubled back don't fill with arrows pointing both ways. Short thin ticks join each door to its curb.
+      const leg = nxt && walkLeg(nxt);
       for (const s of walk.sections) {
         const finished = s.houses.length && s.houses.every(doneOnRoute), col = finished ? cssVar('var(--st-planned)') : accent;
         for (const line of s.path || []) {
           if (line.length < 2) continue;
-          L.polyline(line, { color: col, weight: 4, opacity: finished ? .45 : .7, lineJoin: 'round', interactive: false }).addTo(walkLayer);
-          if (!finished) arrowsAlong(line, 70);
+          L.polyline(line, { color: col, weight: 4, opacity: finished ? .45 : .5, lineJoin: 'round', interactive: false }).addTo(walkLayer);
         }
         for (const h of s.houses) if (h.curb) L.polyline([h.curb, [h.lat, h.lng]], { color: col, weight: 1.5, opacity: .5, dashArray: '2 4', interactive: false }).addTo(walkLayer);
+      }
+      if (leg) {
+        const placed = [];
+        for (const line of leg) {
+          L.polyline(line, { color: accent, weight: 6, opacity: .95, lineJoin: 'round', interactive: false }).addTo(walkLayer);
+          arrowsAlong(line, 45, 30, placed);
+        }
       }
     }
     for (const h of all) {
       if (placeFor(h)) continue; // logged doors already have a pin
       const done = doneOnRoute(h);
-      L.marker([h.lat, h.lng], { icon: L.divIcon({ className: 'pin', html: `<span class="wdot${done ? ' done' : ''}"></span>`, iconSize: [14, 14], iconAnchor: [7, 7] }), keyboard: false })
+      L.marker([h.lat, h.lng], { pane: 'walkDots', icon: L.divIcon({ className: 'pin', html: `<span class="wdot${done ? ' done' : ''}"></span>`, iconSize: [24, 24], iconAnchor: [12, 12] }), keyboard: false })
         .on('click', () => openHouse(h.id)).bindTooltip(esc(houseLabel(h)), { direction: 'top', offset: [0, -6] }).addTo(walkLayer);
     }
     // The next three doors, numbered; the very next one in orange.
     const order = all.filter(h => !doneOnRoute(h)), i0 = nxt ? order.indexOf(nxt) : -1;
     const upcoming = i0 < 0 ? [] : [...order.slice(i0), ...order.slice(0, i0)].slice(0, 3);
-    upcoming.forEach((h, i) => L.marker([h.lat, h.lng], { icon: L.divIcon({ className: 'pin', html: `<span class="nextnum${i ? '' : ' first'}">${i + 1}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }), zIndexOffset: 1000 - i, keyboard: false })
-      .on('click', () => openHouse(h.id)).bindTooltip(`${i ? `Then` : 'Next'}: ${esc(houseLabel(h))}`, { direction: 'top', offset: [0, -12] }).addTo(walkLayer));
+    upcoming.forEach((h, i) => L.marker([h.lat, h.lng], { icon: L.divIcon({ className: 'pin', html: `<span class="nextnum${i ? '' : ' first'}">${i + 1}</span>`, iconSize: [26, 26], iconAnchor: [13, 34] }), zIndexOffset: 1000 - i, keyboard: false })
+      .on('click', () => openHouse(h.id)).bindTooltip(`${i ? `Then` : 'Next'}: ${esc(houseLabel(h))}`, { direction: 'top', offset: [0, -34] }).addTo(walkLayer));
     renderWalkbar();
   }
   function renderWalkbar() {
