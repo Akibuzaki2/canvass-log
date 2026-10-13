@@ -1191,7 +1191,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, extra buildings Microsoft via <a href="https://overturemaps.org">Overture</a>'
   }).addTo(map);
   // Satellite photo: shows houses that are too new for the street map's outlines. Street names ride on top.
-  const PHOTO_KEY = 'canvass-log.photo';
+  const STREET_KEY = 'canvass-log.streetmap';   // the satellite photo is the default; this remembers choosing the street map
   const photo = L.layerGroup([
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }),
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19 }),
@@ -1199,10 +1199,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   function setPhoto(on) {
     on ? photo.addTo(map) : photo.remove();
     $('photoBtn').setAttribute('aria-pressed', String(on));
-    try { localStorage.setItem(PHOTO_KEY, on ? '1' : ''); } catch {}
+    try { localStorage.setItem(STREET_KEY, on ? '' : '1'); } catch {}
   }
   $('photoBtn').addEventListener('click', () => setPhoto(!map.hasLayer(photo)));
-  try { if (localStorage.getItem(PHOTO_KEY)) setPhoto(true); } catch {}
+  let streetMap = false; try { streetMap = !!localStorage.getItem(STREET_KEY); } catch {}
+  if (!streetMap) setPhoto(true);
   map.on('moveend', () => { const c = map.getCenter(); try { localStorage.setItem(VIEW_KEY, JSON.stringify({ lat: c.lat, lng: c.lng, z: map.getZoom() })); } catch {} });
 
   const pinLayer = L.layerGroup().addTo(map);
