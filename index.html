@@ -424,6 +424,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .note.cbw { color: var(--ink); font-weight: 600; }
 .note.cbw.due { color: var(--st-return); }
 .appt .fine { margin: 0; font-size: 13px; color: var(--muted); }
+.signs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.signs button { height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 4px; }
+.signs button::before { content: ''; width: 14px; height: 14px; border-radius: 4px; border: 2px solid currentColor; opacity: .55; flex: none; }
+.signs button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.signs button[aria-pressed="true"]::before { opacity: 1; background: currentColor; box-shadow: inset 0 0 0 2px var(--ink); }
 .survey { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .survey .sq { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
 .survey .yn { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
@@ -658,6 +663,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     </button>
   </div>
   <form class="sheet-body" id="visitForm" autocomplete="off">
+    <div class="field">
+      <span class="label" id="signsLabel">At the door, tap what you see</span>
+      <div class="signs" id="signs" role="group" aria-labelledby="signsLabel"></div>
+    </div>
     <div class="quickgo" id="quickGo" hidden>
       <span class="label">One tap, then on to the next door</span>
       <div class="quickgo-btns">
@@ -1320,6 +1329,20 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     saveThenNext = true; $('visitForm').requestSubmit();
   });
 
+  // Doorstep signs: what you can see before knocking. Over time the Log report compares answer and lead
+  // rates with and without each one, to test the veterans' rules of thumb.
+  const SIGNS = [{ key: 'cars', label: 'Cars' }, { key: 'open', label: 'Door open' }, { key: 'decor', label: 'Decorated' }];
+  const SIGN_NAMES = { cars: 'Cars present', open: 'Door open', decor: 'Decorated' };
+  let signs = {};
+  function paintSigns() {
+    $('signs').innerHTML = SIGNS.map(g => `<button type="button" data-g="${g.key}" aria-pressed="${!!signs[g.key]}">${g.label}</button>`).join('');
+  }
+  $('signs').addEventListener('click', e => {
+    const b = e.target.closest('[data-g]'); if (!b) return;
+    if (signs[b.dataset.g]) delete signs[b.dataset.g]; else signs[b.dataset.g] = true;
+    paintSigns();
+  });
+
   // Survey: the four questions asked at every door, one tap each. Tap again to clear.
   const SURVEY = [{ key: 'allergy', q: 'Allergies or asthma' }, { key: 'pets', q: 'Pets' }, { key: 'married', q: 'Married' }, { key: 'owner', q: 'Homeowner' }];
   let survey = {};
@@ -1359,7 +1382,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('fAddress').value = known ? address : ''; $('fAddress').placeholder = 'Looking up…'; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = address; $('sheetSub').textContent = 'New address';
     $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fCity').value = city || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
-    survey = {}; paintSurvey(); fillAppt(null); fillCallback(null);
+    survey = {}; paintSurvey(); signs = {}; paintSigns(); fillAppt(null); fillCallback(null);
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
     $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
     fillQuick(null); showSheet('sheet'); markClean();
@@ -1375,7 +1398,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('sheetTitle').textContent = p.address;
     $('sheetSub').textContent = p.status === 'return' && p.callback ? `Come back ${cbText(p.callback)}` : p.status === 'demo' && p.appt ? `Booked: ${apptText(p.appt)}` : `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
     $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fCity').value = p.city || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
-    survey = { ...(p.survey || {}) }; paintSurvey(); fillAppt(p.appt); fillCallback(p.status === 'return' ? p.callback : null);
+    survey = { ...(p.survey || {}) }; paintSurvey(); signs = { ...(p.signs || {}) }; paintSigns(); fillAppt(p.appt); fillCallback(p.status === 'return' ? p.callback : null);
     const h = (p.history || []).slice().reverse();
     $('historyWrap').hidden = !h.length;
     $('history').innerHTML = h.map(x => { const s = statusOf(x.status); return `<li style="--c:${s.color}"><span class="dot"></span><time>${fmtDateTime(x.t)}</time>${s.label}</li>`; }).join('');
@@ -1389,10 +1412,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   // the default. Fields the map fills in on its own (address, city, neighborhood) don't count as changes.
   const FORM_FIELDS = ['fName', 'fPhone', 'fNotes', 'fAddress', 'fCity', 'fArea', 'fBiz', 'fApptDate', 'fApptTime', 'purpose', 'fCbDate', 'fCbTime'];
   let clean = {};
-  const fieldVal = id => id === 'status' ? selStatus : id === 'purpose' ? (selStatus === 'demo' ? apptPurpose : '') : id === 'survey' ? SURVEY.map(s => survey[s.key] || '').join() : $(id).value.trim();
-  function markClean() { clean = {}; ['status', 'survey', ...FORM_FIELDS].forEach(k => (clean[k] = fieldVal(k))); }
+  const fieldVal = id => id === 'status' ? selStatus : id === 'purpose' ? (selStatus === 'demo' ? apptPurpose : '') : id === 'survey' ? SURVEY.map(s => survey[s.key] || '').join() : id === 'signs' ? SIGNS.map(g => signs[g.key] ? 1 : 0).join() : $(id).value.trim();
+  function markClean() { clean = {}; ['status', 'survey', 'signs', ...FORM_FIELDS].forEach(k => (clean[k] = fieldVal(k))); }
   function settle(id) { clean[id] = fieldVal(id); }
-  const isDirty = () => openSheetId === 'sheet' && !!draft && ['status', 'survey', ...FORM_FIELDS].some(k => clean[k] !== fieldVal(k));
+  const isDirty = () => openSheetId === 'sheet' && !!draft && ['status', 'survey', 'signs', ...FORM_FIELDS].some(k => clean[k] !== fieldVal(k));
   let leaveThen = null;
   function guardLeave(fn) {
     if (!isDirty()) return fn();
@@ -1436,7 +1459,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const appt = selStatus === 'demo' ? { date: $('fApptDate').value, time: $('fApptTime').value, purpose: apptPurpose } : null;
     if (appt && !apptAt(appt)) { saveThenNext = false; $('fApptDate').focus(); toast('Pick the date and start time for the appointment.'); return; }
     const isBiz = !$('bizWrap').hidden;
-    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), survey: { ...survey }, ...(appt ? { appt } : {}), callback: selStatus === 'return' && $('fCbDate').value ? { date: $('fCbDate').value, time: $('fCbTime').value } : undefined, name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
+    const fields = { address, ...(isBiz ? { biz: $('fBiz').value.trim(), kind: 'business' } : {}), area: $('fArea').value.trim(), city: $('fCity').value.trim(), survey: { ...survey }, signs: { ...signs }, ...(appt ? { appt } : {}), callback: selStatus === 'return' && $('fCbDate').value ? { date: $('fCbDate').value, time: $('fCbTime').value } : undefined, name: $('fName').value.trim(), phone: $('fPhone').value.trim(), notes: $('fNotes').value.trim(), status: selStatus };
     let p = draft.id && places.find(x => x.id === draft.id);
     if (p) {
       // Log a visit when the status changes, or when the door is knocked again on a new day.
@@ -1588,9 +1611,25 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       const a = areaName(v.p), row = byArea.get(a) || { area: a, doors: 0, lead: 0, demo: 0, sold: 0, budget: 0, return: 0, rejected: 0, nosolicit: 0, nocontact: 0, planned: 0 };
       row.doors++; row[v.status]++; byArea.set(a, row);
     }
-    return { visits: visits.length, doors: doors.length, count, areas: [...byArea.values()].sort((a, b) => b.doors - a.doors || a.area.localeCompare(b.area)) };
+    return { visits: visits.length, doors: doors.length, list: doors, count, areas: [...byArea.values()].sort((a, b) => b.doors - a.doors || a.area.localeCompare(b.area)) };
   }
   const pct = (n, d) => d ? Math.round((n / d) * 100) + '%' : '–';
+
+  // Answer and lead rates for doors with and without each doorstep sign, once any door in range has one.
+  const ANSWERED = v => v.status !== 'nocontact' && v.status !== 'planned';
+  const LEADISH = v => v.status === 'lead' || v.status === 'demo' || v.status === 'sold' || v.status === 'budget';
+  function signsTable(s) {
+    const knocked = s.list.filter(v => v.status !== 'planned');
+    if (!knocked.some(v => v.p.signs && Object.keys(v.p.signs).length)) return '';
+    const cell = list => list.length ? `${pct(list.filter(ANSWERED).length, list.length)}<small> answered</small><br>${pct(list.filter(LEADISH).length, list.length)}<small> leads</small>` : '–';
+    const rows = SIGNS.map(g => {
+      const yes = knocked.filter(v => (v.p.signs || {})[g.key]), no = knocked.filter(v => !(v.p.signs || {})[g.key]);
+      return `<tr><td>${SIGN_NAMES[g.key]}</td><td class="n">${cell(yes)}<br><small>${yes.length} door${yes.length === 1 ? '' : 's'}</small></td><td class="n">${cell(no)}<br><small>${no.length} door${no.length === 1 ? '' : 's'}</small></td></tr>`;
+    }).join('');
+    return `<div class="areas-wrap"><table class="areas signs-table">
+      <thead><tr><th>Doorstep sign</th><th class="n">With</th><th class="n">Without</th></tr></thead>
+      <tbody>${rows}</tbody></table><p class="fine">Doors you didn't tag count as without. Give it a few weeks of doors before trusting a gap.</p></div>`;
+  }
 
   function renderReport(visits) {
     const r = range(), s = summarize(visits);
@@ -1614,6 +1653,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       ${s.areas.length > 1 || (s.areas.length === 1 && af === 'all') ? `<div class="areas-wrap"><table class="areas">
         <thead><tr><th>Neighborhood</th><th class="n">Doors</th><th class="n">Leads</th><th class="n">Return</th><th class="n">Rate</th></tr></thead>
         <tbody>${areaRows}</tbody></table></div>` : ''}
+      ${signsTable(s)}
       <div class="report-actions">
         <button class="btn" type="button" id="shareReport">Share report</button>
         <button class="btn" type="button" id="csvReport">Export these rows</button>
@@ -4258,10 +4298,10 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const people = list.filter(p => p.name || p.phone || (p.survey && Object.keys(p.survey).length))
       .sort((a, b) => (lastT(b) - lastT(a)));
     if (!people.length) return toast('No names, phones or survey answers to export yet.');
-    const head = ['Date', 'Name', 'Phone', 'Street address', 'City', 'ZIP', 'Status', 'Appointment', ...SURVEY.map(s => s.q), 'Notes'];
+    const head = ['Date', 'Name', 'Phone', 'Street address', 'City', 'ZIP', 'Status', 'Appointment', ...SURVEY.map(s => s.q), ...SIGNS.map(g => SIGN_NAMES[g.key]), 'Notes'];
     const rows = people.map(p => {
       const parts = (p.address || '').split(',').map(t => t.trim()), zipM = (p.address || '').match(/\b\d{5}(-\d{4})?\b(?!.*\b\d{5}\b)/);
-      return [fmtDate(lastT(p)), p.name, p.phone, p.biz ? `${p.biz}, ${parts[0]}` : parts[0], p.city || '', zipM ? zipM[0] : '', p.status ? statusOf(p.status).label : '', p.status === 'demo' ? apptText(p.appt) : p.status === 'return' && p.callback ? `Come back ${cbText(p.callback)}` : '', ...SURVEY.map(s => yesNo((p.survey || {})[s.key])), p.notes];
+      return [fmtDate(lastT(p)), p.name, p.phone, p.biz ? `${p.biz}, ${parts[0]}` : parts[0], p.city || '', zipM ? zipM[0] : '', p.status ? statusOf(p.status).label : '', p.status === 'demo' ? apptText(p.appt) : p.status === 'return' && p.callback ? `Come back ${cbText(p.callback)}` : '', ...SURVEY.map(s => yesNo((p.survey || {})[s.key])), ...SIGNS.map(g => (p.signs || {})[g.key] ? 'Yes' : ''), p.notes];
     });
     const url = URL.createObjectURL(xlsx('Contacts', head, rows, [10, 18, 14, 24, 12, 7, 14, 22, 18, 7, 9, 11, 40]));
     const a = document.createElement('a'); a.href = url; a.download = `canvass-contacts-${stamp()}.xlsx`;
