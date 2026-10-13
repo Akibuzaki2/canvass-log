@@ -440,6 +440,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .survey .yn button { height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-weight: 600; font-size: 14px; }
 .survey .yn button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .notechips { display: flex; flex-wrap: wrap; gap: 6px; }
+.namesugg { margin: -4px 0 10px; }
+.namesugg .chip.fix { border-color: var(--accent); }
 .notechips .chip, .notechips .chip[aria-pressed="false"] { opacity: 1; box-shadow: none; padding: 5px 10px; font-size: 13px; background: var(--paper); }
 .notechips .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .addr-box { border: 1px solid var(--line); border-radius: 14px; padding: 0 12px; }
@@ -711,13 +713,14 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     <div class="two">
       <div class="field">
         <label class="label" for="fName">Name</label>
-        <input id="fName" autocomplete="off" autocapitalize="words">
+        <input id="fName" autocomplete="off" autocapitalize="words" autocorrect="on" spellcheck="true">
       </div>
       <div class="field">
         <label class="label" for="fPhone">Phone</label>
         <input id="fPhone" type="tel" inputmode="tel" autocomplete="off">
       </div>
     </div>
+    <div class="notechips namesugg" id="nameSugg" hidden aria-label="Name suggestions"></div>
     <div class="field">
       <span class="label" id="surveyLabel">Survey</span>
       <div class="survey" id="survey" role="group" aria-labelledby="surveyLabel"></div>
@@ -1513,6 +1516,66 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 
   // Quick notes: tap to add a common note, tap again to take it out.
   const NOTE_CHIPS = ['Dog in yard', 'Renter', 'Come back evening', 'Come back weekend', 'Decision maker not home', 'No soliciting sign', 'Spanish speaker'];
+  // Name help: common US first names (1990 Census lists, most common first, plus newer names). As each name is
+  // typed, offer the closest spellings: wrong letters, missing letters and swapped letters all count. Tap to use one.
+  const FIRST_NAMES = 'James John Robert Michael Mary William David Richard Charles Joseph Thomas Patricia Christopher Linda Barbara Daniel Paul Mark Elizabeth Jennifer Donald George Maria Kenneth Susan Steven Edward Margaret Brian Dorothy Ronald Anthony Lisa Kevin Nancy Karen Betty Helen Jason Matthew Gary Timothy Sandra Jose Larry Jeffrey Donna Frank Carol Ruth Scott Eric Stephen Andrew Sharon Michelle Laura Sarah Kimberly Deborah Jessica Raymond Shirley Cynthia Angela Melissa Brenda Amy Gregory Anna Joshua Jerry Rebecca Virginia Kathleen Pamela Dennis Martha Debra Amanda Stephanie Walter Patrick Carolyn Christine Peter Marie Janet Catherine Harold Frances Douglas Henry Ann Joyce Diane Alice Julie Carl Heather Teresa Arthur Doris Gloria Ryan Roger Evelyn Joe Juan Jack Jean Cheryl Albert Jonathan Mildred Katherine Justin Terry Gerald Keith Samuel Joan Ashley Willie Judith Rose Janice Kelly Ralph Lawrence Nicole Judy Nicholas Christina Roy Kathy Theresa Benjamin Beverly Denise Bruce Brandon Adam Tammy Irene Harry Fred Jane Wayne Billy Lori Steve Louis Jeremy Rachel Marilyn Aaron Andrea Kathryn Randy Howard Eugene Carlos Louise Sara Anne Jacqueline Wanda Russell Bobby Bonnie Julia Victor Ruby Lois Tina Phyllis Norma Paula Martin Diana Annie Ernest Phillip Todd Lillian Jesse Emily Robin Peggy Crystal Craig Gladys Alan Rita Dawn Shawn Connie Florence Clarence Sean Philip Chris Tracy Edna Johnny Tiffany Carmen Rosa Earl Cindy Jimmy Antonio Danny Bryan Tony Luis Mike Grace Stanley Leonard Nathan Wendy Dale Manuel Rodney Curtis Victoria Edith Kim Sherry Norman Sylvia Josephine Thelma Shannon Sheila Allen Ethel Ellen Elaine Marjorie Marvin Carrie Charlotte Vincent Glenn Jeffery Travis Jeff Monica Esther Chad Jacob Pauline Emma Juanita Lee Melvin Alfred Anita Rhonda Hazel Kyle Francis Amber Bradley Eva Debbie Jesus Herbert Frederick April Leslie Ray Clara Lucille Jamie Joel Joanne Eleanor Valerie Danielle Edwin Megan Alicia Don Suzanne Michele Gail Eddie Bertha Darlene Veronica Jill Ricky Erin Geraldine Troy Randall Lauren Cathy Joann Lorraine Lynn Sally Barry Regina Alexander Erica Beatrice Dolores Bernice Bernard Audrey Yvonne Mario Leroy Annette June Francisco Marcus Samantha Micheal Theodore Clifford Miguel Oscar Marion Dana Stacy Ana Renee Jay Jim Ida Vivian Tom Roberta Holly Brittany Melanie Calvin Alex Jon Loretta Yolanda Jeanette Laurie Ronnie Katie Bill Lloyd Tommy Leon Derek Kristen Vanessa Alma Sue Warren Elsie Beth Jeanne Vicki Darrell Jerome Floyd Carla Tara Rosemary Leo Alvin Eileen Terri Tim Wesley Gordon Dean Greg Jorge Dustin Pedro Derrick Gertrude Lucy Tonya Dan Ella Stacey Lewis Zachary Wilma Gina Kristin Corey Jessie Natalie Agnes Vera Herman Maurice Vernon Roberto Charlene Bessie Clyde Delores Glen Hector Melinda Pearl Arlene Shane Ricardo Sam Maureen Colleen Allison Tamara Rick Lester Joy Georgia Constance Brent Ramon Charlie Lillie Claudia Jackie Marcia Tyler Gilbert Tanya Nellie Minnie Marlene Heidi Glenda Gene Marc Lydia Viola Courtney Marian Stella Caroline Reginald Dora Jo Ruben Brett Angel Vickie Nathaniel Rafael Mattie Edgar Milton Raul Maxine Irma Ben Chester Cecil Mabel Marsha Myrtle Duane Franklin Lena Christy Andre Deanna Patsy Hilda Elmer Gwendolyn Brad Gabriel Jennie Nora Ron Mitchell Roland Arnold Harvey Margie Nina Cassandra Leah Jared Penny Kay Priscilla Naomi Carole Brandy Olga Adrian Karl Billie Dianne Tracey Leona Cory Claude Erik Jenny Felicia Sonia Darryl Neil Miriam Velma Becky Christian Javier Fernando Clinton Bobbie Violet Kristina Ted Mathew Tyrone Darren Lonnie Toni Lance Cody Julio Misty Mae Kurt Shelly Daisy Ramona Sherri Allan Nelson Erika Katrina Claire Guy Clayton Hugh Lindsey Lindsay Max Dwayne Geneva Guadalupe Belinda Margarita Sheryl Dwight Armando Felix Jimmie Cora Faye Everett Ada Natasha Sabrina Isabel Jordan Ian Wallace Marguerite Hattie Harriet Ken Bob Jaime Molly Cecilia Kristi Brandi Blanche Sandy Rosie Joanna Iris Casey Alfredo Eunice Angie Alberto Dave Ivan Inez Lynda Johnnie Sidney Byron Julian Madeline Amelia Alberta Isaac Morris Genevieve Monique Jodi Janie Maggie Kayla Sonya Jan Kristine Candace Clifton Willard Daryl Ross Fannie Maryann Opal Alison Yvette Melody Virgil Andy Marshall Salvador Perry Kirk Sergio Luz Susie Olivia Flora Shelley Seth Kent Terrance Rene Kristy Mamie Lula Lola Verna Beulah Antoinette Eduardo Terrence Enrique Freddie Candice Juana Jeannette Pam Kelli Wade Hannah Whitney Bridget Austin Stuart Karla Celia Fredrick Arturo Alejandro Joey Nick Luther Latoya Patty Shelia Gayle Della Vicky Lynne Wendell Jeremiah Evan Julius Sheri Marianne Donnie Otis Kara Jacquelyn Erma Blanca Trevor Oliver Luke Homer Gerard Doug Myra Leticia Pat Krista Roxanne Kenny Hubert Angelo Shaun Angelica Robyn Adrienne Rosalie Alexandra Brooke Bethany Sadie Bernadette Lyle Matt Alfonso Traci Jody Kendra Jasmine Nichole Rachael Chelsea Mable Ernestine Muriel Orlando Rex Carlton Ernesto Cameron Neal Marcella Elena Krystal Angelina Pablo Lorenzo Omar Wilbur Blake Grant Horace Roderick Kerry Nadine Kari Estelle Dianna Paulette Lora Abraham Willis Rickey Ira Mona Doreen Rosemarie Desiree Antonia Andres Cesar Johnathan Malcolm Rudolph Damon Kelvin Rudy Preston Hope Ginger Janis Betsy Christie Freda Alton Archie Marco Wm Mercedes Meredith Lynette Teri Cristina Eula Pete Randolph Garry Geoffrey Jonathon Felipe Bennie Gerardo Ed Dominic Loren Leigh Meghan Sophia Eloise Rochelle Gretchen Cecelia Delbert Colin Guillermo Earnest Lucas Raquel Henrietta Alyssa Jana Kelley Gwen Benny Noel Spencer Rodolfo Myron Edmund Jenna Tricia Laverne Olive Alexis Tasha Garrett Salvatore Cedric Lowell Gregg Silvia Elvira Delia Sophie Kate Patti Lorena Kellie Sonja Lila Lana Darla May Mindy Essie Mandy Sherman Wilson Devin Sylvester Roosevelt Israel Jermaine Lorene Elsa Josefina Jeannie Miranda Dixie Lucia Marta Faith Lela Johanna Shari Camille Forrest Wilbert Leland Tami Shawna Elisa Ebony Melba Ora Nettie Tabitha Ollie Winifred Kristie Marina Alisha Aimee Rena Simon Clark Irving Carroll Bryant Owen Myrna Marla Tammie Latasha Bonita Patrice Ronda Sherrie Addie Rufus Woodrow Sammy Kristopher Mack Levi Marcos Gustavo Jake Francine Deloris Stacie Adriana Cheri Shelby Abigail Celeste Jewel Cara Adele Rebekah Lucinda Dorthy Lionel Marty Taylor Ellis Dallas Gilberto Clint Nicolas Laurence Ismael Orville Drew Effie Trina Reba Sallie Aurora Lenora Etta Lottie Kerri Trisha Nikki Estella Francisca Josie Tracie Marissa Karin Brittney Janelle Lourdes Laurel Helene Fern Elva Corinne Kelsey Ervin Dewey Al Wilfred Josh Hugo Ignacio Caleb Tomas Sheldon Erick Frankie Ina Bettie Elisabeth Aida Caitlin Ingrid Iva Eugenia Christa Goldie Cassie Maude Jenifer Stewart Doyle Darrel Rogelio Terence Santiago Alonzo Elias Bert Elbert Ramiro Conrad Noah Therese Dena Lorna Janette Latonya Candy Morgan Consuelo Tamika Rosetta Debora Cherie Polly Dina Grady Phil Cornelius Lamar Rolando Clay Percy Dexter Bradford Merle Jewell Fay Jillian Dorothea Nell Trudy Esperanza Patrica Kimberley Shanna Helena Carolina Cleo Stefanie Darin Amos Terrell Moses Irvin Saul Roman Darnell Randal Tommie Rosario Ola Janine Mollie Lupe Alisa Lou Maribel Susanne Timmy Darrin Winston Brendan Toby Van Abel Dominick Boyd Emilio Elijah Cary Domingo Santos Aubrey Emmett Marlon Emanuel Jerald Edmond Emil Bette Susana Elise Cecile Isabelle Lesley Jocelyn Paige Joni Rachelle Leola Daphne Alta Ester Petra Graciela Imogene Jolene Keisha Dewayne Will Otto Teddy Reynaldo Bret Jess Trent Humberto Emmanuel Stephan Louie Lacey Glenna Gabriela Keri Ursula Lizzie Kirsten Shana Adeline Mayra Jayne Jaclyn Gracie Sondra Carmela Marisa Rosalind Charity Tonia Beatriz Marisol Clarice Vicente Lamont Garland Miles Micah Efrain Logan Heath Rodger Harley Demetrius Ethan Eldon Jeanine Sheena Angeline Frieda Lily Robbie Shauna Millie Claudette Cathleen Angelia Gabrielle Autumn Katharine Summer Jodie Staci Lea Christi Justine Elma Luella Margret Rocky Pierre Junior Freddy Eli Bryce Antoine Kendall Royce Sterling Mickey Chase Grover Elton Cleveland Dylan Chuck Damian Dominique Socorro Martina Margo Mavis Callie Bobbi Maritza Lucile Leanne Jeannine Deana Aileen Lorie Ladonna Willa Manuela Gale Selma Dolly Sybil Abby Lara Ivy Dee Winnie Marcy Luisa Reuben Stan August Leonardo Jasper Russel Erwin Benito Hans Monte Blaine Ernie Curt Quentin Agustin Murray Jeri Magdalena Ofelia Meagan Audra Matilda Leila Cornelia Bianca Simone Bettye Randi Virgie Latisha Barbra Georgina Eliza Leann Bridgette Jamal Devon Adolfo Harrison Tyson Burton Brady Elliott Wilfredo Bart Jarrod Vance Denis Damien Joaquin Harlan Desmond Elliot Darwin Gregorio Buddy Rhoda Haley Adela Nola Bernadine Flossie Ila Greta Ruthie Nelda Minerva Lilly Terrie Letha Hilary Estela Valarie Brianna Rosalyn Earline Catalina Ava Mia Clarissa Lidia Corrine Alexandria Concepcion Tia Sharron Rae Dona Ericka Jami Elnora Chandra Lenore Xavier Kermit Roscoe Esteban Anton Solomon Scotty Norbert Elvin Williams Nolan Carey Rod Quinton Hal Brain Rob Elwood Kendrick Darius Moises Neva Marylou Melisa Tabatha Serena Avis Allie Sofia Jeanie Odessa Nannie Harriett Loraine Penelope Milagros Emilia Benita Allyson Ashlee Tania Esmeralda Karina Eve Pearlie Zelma Malinda Noreen Tameka Saundra Hillary Amie Son Marlin Fidel Thaddeus Cliff Marcel Ali Jackson Raphael Bryon Armand Alvaro Jeffry Dane Joesph Thurman Ned Sammie Rusty Michel Monty Rory Fabian Reggie Mason Graham Althea Rosalinda Lilia Alana Gay Clare Alejandra Elinor Lorrie Jerri Darcy Earnestine Carmella Noemi Marcie Liza Annabelle Louisa Earlene Mallory Carlene Nita Selena Tanisha Katy Julianne Kris Isaiah Vaughn Gus Avery Loyd Diego Adolph Norris Millard Rocco Gonzalo Derick Rodrigo Gerry Lakisha Edwina Maricela Margery Kenya Dollie Roxie Roslyn Kathrine Nanette Charmaine Lavonne Ilene Tammi Suzette Corine Kaye Chrystal Lina Deanne Lilian Juliana Aline Luann Kasey Maryanne Evangeline Colette Melva Lawanda Yesenia Nadia Madge Kathie Ophelia Valeria Nona Mitzi Mari Georgette Claudine Fran Alissa Roseann Lakeisha Susanna Reva Deidre Chasity Sheree Carly Elvia Alyce Deirdre Gena Briana Araceli Katelyn Rosanne Wendi Tessa Berta Marva Imelda Marietta Marci Leonor Arline Sasha Madelyn Janna Juliette Deena Aurelia Josefa Augusta Liliana Young Lessie Amalia Savannah Anastasia Vilma Natalia Rosella Lynnette Corina Alfreda Leanna Amparo Coleen Tamra Aisha Wilda Karyn Cherry Queen Maura Mai Evangelina Rosanna Hallie Erna Enid Mariana Lacy Juliet Jacklyn Freida Madeleine Mara Hester Cathryn Lelia Casandra Bridgett Angelita Jannie Dionne Annmarie Katina Beryl Phoebe Millicent Jayden Aiden Brayden Kayden Jaxon Liam Hunter Hayden Landon Colton Carson Cole Tanner Brody Gavin Wyatt Hudson Easton Lincoln Grayson Carter Parker Cooper Bentley Ryder Kaden Paxton Maverick Brooks Beau Tucker Dax Rhett Kyler Kaleb Kade Brock Tristan Jace Jase Isabella Madison Chloe Harper Addison Brooklyn Kaylee Hailey Destiny Makayla Mckenna Mackenzie Kenzie Peyton Riley Reagan Brynlee Hadley Oakley Everly Paisley Kinsley Emery Rylee Sierra Kaitlyn Britney Trista Shayla Kylie Kenna Jade Jada Aspen Willow Harmony Lexi Macy Ellie Addy Maddie Brenna'.split(' ');
+  const NAME_RANK = new Map(FIRST_NAMES.map((n, i) => [n.toLowerCase(), i]));
+  // Edit distance where a swapped pair of letters ("Gordno") costs one, like a wrong letter.
+  function osa(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+    return d[a.length][b.length];
+  }
+  function nameGuesses(word, done) {
+    const w = word.toLowerCase(); if (w.length < 2) return [];
+    const out = [];
+    for (const n of FIRST_NAMES) {
+      const l = n.toLowerCase();
+      let score;
+      if (l === w) score = done ? -1 : 0;
+      else if (!done && l.startsWith(w)) score = 0.5;
+      else {
+        const full = osa(w, l), lim = w.length <= 4 ? 1 : 2;
+        // While still typing, also match the start of a longer name ("Gord" → Gordon, "Grod" → Gordon).
+        const part = done || w.length < 3 ? 9 : osa(w, l.slice(0, w.length)) + 0.6;
+        score = Math.min(full <= lim ? full : 9, part <= 1.6 ? part : 9);
+      }
+      if (score < 9) out.push([score, NAME_RANK.get(l), n]);
+    }
+    return out.sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
+  }
+  function paintNameSugg() {
+    const el = $('fName'), v = el.value, at = el.selectionStart ?? v.length;
+    const start = v.slice(0, at).search(/[A-Za-z'-]*$/), end = at + (v.slice(at).match(/^[A-Za-z'-]*/) || [''])[0].length;
+    let word = v.slice(start, end), from = start, to = end, done = false;
+    if (!word) { // just finished a name: check the one before the space
+      const m = v.slice(0, at).match(/([A-Za-z'-]+)[^A-Za-z'-]+$/);
+      if (m && !/^(and|or)$/i.test(m[1])) { word = m[1]; from = at - m[0].length; to = from + word.length; done = true; }
+    }
+    let list = word && !/^(and|or)$/i.test(word) ? nameGuesses(word, done) : [];
+    if (done && NAME_RANK.has(word.toLowerCase())) list = [];          // spelled right: nothing to offer
+    list = list.filter(n => n !== word).slice(0, 4);
+    const box = $('nameSugg');
+    box.hidden = !list.length;
+    box.innerHTML = list.map(n => `<button type="button" class="chip${done ? ' fix' : ''}" data-name="${esc(n)}" data-from="${from}" data-to="${to}">${done ? `${esc(word)} → ` : ''}${esc(n)}</button>`).join('');
+  }
+  $('fName').addEventListener('input', paintNameSugg);
+  $('fName').addEventListener('focus', paintNameSugg);
+  $('fName').addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== $('fName')) $('nameSugg').hidden = true; }, 200));
+  $('nameSugg').addEventListener('pointerdown', e => e.preventDefault()); // keep the keyboard up
+  $('nameSugg').addEventListener('click', e => {
+    const b = e.target.closest('[data-name]'); if (!b) return;
+    const el = $('fName'), v = el.value, from = +b.dataset.from, to = +b.dataset.to;
+    const after = v.slice(to), add = after.startsWith(' ') ? '' : ' ';
+    el.value = v.slice(0, from) + b.dataset.name + add + after.replace(/^ /, after.startsWith(' ') ? ' ' : '');
+    const caret = from + b.dataset.name.length + 1;
+    el.focus(); el.setSelectionRange(caret, caret);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
   $('noteChips').innerHTML = NOTE_CHIPS.map(n => `<button type="button" class="chip" data-note="${esc(n)}" aria-pressed="false">${esc(n)}</button>`).join('');
   function paintNoteChips() {
     const v = $('fNotes').value.toLowerCase();
@@ -1628,7 +1691,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     selStatus = ''; paintStatus();
     $('fAddress').value = known ? address : ''; $('fAddress').placeholder = 'Looking up…'; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = address; $('sheetSub').textContent = 'New address';
-    $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fCity').value = city || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
+    $('nameSugg').hidden = true; $('fName').value = ''; $('fPhone').value = ''; $('fNotes').value = ''; $('fArea').value = area || ''; $('fCity').value = city || ''; $('fBiz').value = ''; $('bizWrap').hidden = true;
     survey = {}; paintSurvey(); signs = {}; paintSigns(); fillAppt(null); fillCallback(null);
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
     $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
@@ -1644,7 +1707,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('fAddress').value = p.address; delete $('fAddress').dataset.touched;
     $('sheetTitle').textContent = p.address;
     $('sheetSub').textContent = p.status === 'return' && p.callback ? `Come back ${cbText(p.callback)}` : p.status === 'demo' && p.appt ? `Booked: ${apptText(p.appt)}` : `${statusOf(p.status).label} · updated ${fmtDate(p.updated)}`;
-    $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fCity').value = p.city || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
+    $('nameSugg').hidden = true; $('fName').value = p.name || ''; $('fPhone').value = p.phone || ''; $('fNotes').value = p.notes || ''; $('fArea').value = p.area || ''; $('fCity').value = p.city || ''; $('fBiz').value = p.biz || ''; $('bizWrap').hidden = !p.biz;
     survey = { ...(p.survey || {}) }; paintSurvey(); signs = { ...(p.signs || {}) }; paintSigns(); fillAppt(p.appt); fillCallback(p.status === 'return' ? p.callback : null);
     const h = (p.history || []).slice().reverse();
     $('historyWrap').hidden = !h.length;
