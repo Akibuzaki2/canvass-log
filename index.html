@@ -2465,7 +2465,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         houses.push(h); addrPts.push(xy);
       } else if (t.building) {
         if (area && (area < 35 || area > 1500)) continue; // skip sheds and big commercial blocks
-        houses.push({ id: `${el.type[0]}${el.id}`, lat, lng, xy, num: '', street: '' });
+        houses.push({ id: `${el.type[0]}${el.id}`, lat, lng, xy, num: '', street: '', area });
       }
     }
     // A building with an address point inside it is the same door: keep the address point.
@@ -2495,6 +2495,13 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       else if (best && !h.street) { h.street = best.name; h.guess = [...near.keys()].map(x => x.name); }
       if (!h.street) h.street = 'Other houses';
     }
+    // Sheds, detached garages and trailers out back aren't doors: an unnumbered building that's much smaller
+    // than a neighbour within one lot, and sits farther from the street than it, is left off the route.
+    const toStreet = xy => { let d = Infinity; for (const s of streets.values()) if (!s.lane) for (const [a, b] of s.segs) d = Math.min(d, segDist(xy, a, b)); return d; };
+    for (const h of kept) h.toSt = toStreet(h.xy);
+    const outback = new Set(kept.filter(h => !h.num && !h.placeId && h.area && h.area < 150 && kept.some(o => o !== h && dist(o.xy, h.xy) < 35
+      && (o.num || o.placeId || (o.area || 0) >= h.area * 1.6) && o.toSt + 5 < h.toSt)));
+    if (outback.size) for (let i = kept.length - 1; i >= 0; i--) if (outback.has(kept[i])) kept.splice(i, 1);
     // Map tiles don't say which street a number belongs to. The start house's real address does,
     // and so do the neighbours: a corner house goes with the street whose numbers it fits.
     const sa = splitAddress(start.address);
