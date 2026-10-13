@@ -1041,7 +1041,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const find = async text => { const r = await get(text, '&bounded=1'); return r.length ? r : get(text, ''); };
     const hit = list => list.some(r => r.address && (r.address.house_number || '').toLowerCase() === qNum.toLowerCase());
     // A tapped suggestion already names one exact house: fetch just that one.
-    if (qNum && sugg.key && sugg.text === q) { const es = await esriFind(q, c, qNum, sugg.key).catch(() => []); if (es.length) return es.slice(0, 1); }
+    if (qNum && sugg.esri && sugg.text === q) { const es = await esriFind(q, c, qNum, sugg.key || '').catch(() => []); if (es.length) return es.slice(0, 1); }
     let res = await find(q);
     if (qNum && !hit(res)) {
       // Photon reads the same map data but forgives typos and loose street names ("2112 ibis nampa").
@@ -1077,7 +1077,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const r = await fetch(`${ESRI}/findAddressCandidates?f=json&maxLocations=5&location=${c.lng},${c.lat}&outFields=Addr_type,AddNum,City,RegionAbbr,Postal&SingleLine=${encodeURIComponent(q)}${magicKey ? `&magicKey=${encodeURIComponent(magicKey)}` : ''}`);
     if (!r.ok) return [];
     return ((await r.json()).candidates || [])
-      .filter(k => k.attributes && /^(PointAddress|StreetAddress|Subaddress)$/.test(k.attributes.Addr_type) && String(k.attributes.AddNum).toLowerCase() === num.toLowerCase() && k.score >= 85)
+      .filter(k => k.attributes && /^(PointAddress|StreetAddress|StreetAddressExt|StreetInt|Subaddress)$/.test(k.attributes.Addr_type) && String(k.attributes.AddNum).toLowerCase() === num.toLowerCase() && k.score >= 85)
       .slice(0, 2).map(k => {
         const at = k.attributes, road = (k.address || '').split(',')[0].replace(/^\S+\s+/, '');
         const address = { house_number: String(at.AddNum), road, city: at.City || '', state_code: at.RegionAbbr || '', postcode: at.Postal || '' };
@@ -1336,29 +1336,50 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     if (address) { openNew(lat, lng, address, true, area, city); if (!city) cityInto(lat, lng); }
     else { openNew(lat, lng, `${num} …`); lookupInto(lat, lng, num); }
   }
-  // Type-ahead: Esri's free address suggestions, nearest first, from a few letters of the street ("2112 ibis").
-  let sugg = { text: '', key: '' }, suggSeq = 0, suggTimer = 0;
+  // Type-ahead: Esri's free address suggestions from a few letters of the street ("1950 w ib"), searched within
+  // about 40 miles of you first. Esri often knows the street but not every house number on it yet, so a street it
+  // suggests is offered with your number in front ("1950 W Ibis Dr"); picking it places the house along the street.
+  let sugg = { text: '', key: '', esri: false }, suggSeq = 0, suggTimer = 0;
+  async function esriSuggest(text, c, local) {
+    const box = local ? `&searchExtent=${c.lng - .8},${c.lat - .6},${c.lng + .8},${c.lat + .6}` : '';
+    const r = await fetch(`${ESRI}/suggest?f=json&maxSuggestions=8&countryCode=USA&location=${c.lng},${c.lat}${box}&text=${encodeURIComponent(text)}`);
+    return ((await r.json()).suggestions || []).filter(x => !x.isCollection);
+  }
+  async function addressSuggestions(q) {
+    const c = (meMarker && meMarker.getLatLng()) || map.getCenter();
+    const num = (q.match(/^\s*(\d+[A-Za-z]?)\s+\S/) || [])[1], rest = num ? q.replace(/^\s*\S+\s+/, '') : '';
+    const [near, streets] = await Promise.all([esriSuggest(q, c, true).catch(() => []), num && rest.length >= 2 ? esriSuggest(rest, c, true).catch(() => []) : []]);
+    const out = [], seen = new Set();
+    const add = (text, key) => { const k = text.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ text, key }); } };
+    // Exact house first, then the streets near you that match what you typed, then other numbered matches.
+    near.filter(x => num && x.text.startsWith(num + ' ')).forEach(x => add(x.text, x.magicKey));
+    [...near, ...streets].filter(x => num && !/^\d/.test(x.text)).forEach(x => add(`${num} ${x.text}`, ''));
+    near.filter(x => !num || !x.text.startsWith(num + ' ')).filter(x => !num || /^\d/.test(x.text)).forEach(x => add(x.text, x.magicKey));
+    if (!out.length) (await esriSuggest(q, c, false).catch(() => [])).forEach(x => add(x.text, x.magicKey));
+    // Rank by how many of the typed words start a word of the street ("1950 w ib": W Ibis Dr beats N Iberis Ave).
+    const norm = w => (DIRS[w] || w).toLowerCase(), typed = (rest || q).toLowerCase().split(/[\s,]+/).filter(Boolean).map(norm);
+    const fit = t => { const ws = t.split(',')[0].toLowerCase().split(/\s+/).map(norm); return typed.filter(x => ws.some(w => w.startsWith(x))).length; };
+    return out.map((x, i) => [fit(x.text), i, x]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).map(x => x[2]).slice(0, 7);
+  }
   $('searchInput').addEventListener('input', () => {
     clearTimeout(suggTimer);
     const q = $('searchInput').value.trim(), seq = ++suggSeq;
     if (q.length < 4 || !navigator.onLine) return;
     suggTimer = setTimeout(async () => {
       try {
-        const c = (meMarker && meMarker.getLatLng()) || map.getCenter();
-        const r = await fetch(`${ESRI}/suggest?f=json&maxSuggestions=6&countryCode=USA&location=${c.lng},${c.lat}&text=${encodeURIComponent(q)}`);
-        const list = ((await r.json()).suggestions || []).filter(x => !x.isCollection);
+        const list = await addressSuggestions(q);
         if (seq !== suggSeq || document.activeElement !== $('searchInput')) return;
         const mine = loggedMatches(q), ul = $('results');
         if (!list.length && !mine.length) { closeResults(); return; }
         ul.innerHTML = mine.map(p => `<li><button type="button" data-s="${esc(p.address)}"><span class="dotn" style="--c:${statusOf(p.status).color}"></span>${esc(p.address.split(',')[0])}<span class="sub">In your log · ${esc(statusOf(p.status).label)}</span></button></li>`).join('')
-          + list.map(x => { const [a, ...rest] = x.text.replace(/, USA$/, '').split(', '); return `<li><button type="button" data-s="${esc(x.text)}" data-k="${esc(x.magicKey)}">${esc(a)}<span class="sub">${esc(rest.join(', '))}</span></button></li>`; }).join('');
+          + list.map(x => { const [a, ...more] = x.text.replace(/, USA$/, '').split(', '); return `<li><button type="button" data-s="${esc(x.text)}" data-k="${esc(x.key)}" data-esri="1">${esc(a)}<span class="sub">${esc(more.join(', '))}</span></button></li>`; }).join('');
         ul.hidden = false;
       } catch {}
     }, 300);
   });
   $('results').addEventListener('click', e => {
     const b = e.target.closest('button[data-s]'); if (!b) return;
-    sugg = { text: b.dataset.s, key: b.dataset.k || '' };
+    sugg = { text: b.dataset.s, key: b.dataset.k || '', esri: !!b.dataset.esri };
     $('searchInput').value = b.dataset.s; $('searchForm').requestSubmit();
   });
   $('searchForm').addEventListener('submit', async e => {

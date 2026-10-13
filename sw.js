@@ -1,5 +1,5 @@
 // Keeps the app opening when signal is weak: app files come from cache when the network fails.
-const CACHE = 'canvass-log-v30';
+const CACHE = 'canvass-log-v31';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'apple-touch-icon.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
@@ -8,7 +8,8 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.hostname.includes('nominatim')) return;
+  // Address and Census lookups go straight to the network: they change, and caching them only fills the phone.
+  if (e.request.method !== 'GET' || /nominatim|photon|arcgis|census|zippopotam/.test(url.hostname)) return;
   const isTile = url.hostname.endsWith('tile.openstreetmap.org');
   e.respondWith(
     fetch(e.request).then(r => {
