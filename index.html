@@ -424,6 +424,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .note.cbw { color: var(--ink); font-weight: 600; }
 .note.cbw.due { color: var(--st-return); }
 .appt .fine { margin: 0; font-size: 13px; color: var(--muted); }
+.here { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: var(--paper); }
+.here .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.here .stats div { display: flex; flex-direction: column; line-height: 1.15; }
+.here .stats b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.here .stats span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
 .signs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .signs button { height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 4px; }
 .signs button::before { content: ''; width: 14px; height: 14px; border-radius: 4px; border: 2px solid currentColor; opacity: .55; flex: none; }
@@ -664,6 +669,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     </button>
   </div>
   <form class="sheet-body" id="visitForm" autocomplete="off">
+    <div class="here" id="hereBox" hidden>
+      <div class="stats" id="hereStats"></div>
+      <p class="fine" id="hereNote"></p>
+      <button type="button" class="btn primary" id="hereRoute">Start a route from here</button>
+    </div>
     <div class="field">
       <span class="label" id="signsLabel">At the door, tap what you see</span>
       <div class="signs" id="signs" role="group" aria-labelledby="signsLabel"></div>
@@ -1233,14 +1243,15 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     let res = [];
     ul.onclick = async ev => {
       const own = ev.target.closest('button[data-p]');
-      if (own) { const p = places.find(x => x.id === own.dataset.p); closeResults(); if (p) { closeSheet(); showTab('map'); map.setView([p.lat, p.lng], 18); openSheet(p.id); } return; }
+      if (own) { const p = places.find(x => x.id === own.dataset.p); closeResults(); if (p) { closeSheet(); showTab('map'); map.setView([p.lat, p.lng], 18); openSheet(p.id); showHere(p.lat, p.lng, p.address); } return; }
       const b = ev.target.closest('button[data-i]'); if (!b) return;
       const r = res[+b.dataset.i]; closeResults(); showTab('map');
       const lat = +r.lat, lng = +r.lon, a = r.address || {};
       const city = a.city || a.town || a.village || a.hamlet || '';
       if (a.house_number) {
         const p = placeAt(shortAddress(a), lat, lng);
-        return p ? (map.setView([p.lat, p.lng], 18), openSheet(p.id)) : openFound(lat, lng, a.house_number, shortAddress(a, r.display_name), areaOf(a), city);
+        p ? (map.setView([p.lat, p.lng], 18), openSheet(p.id)) : openFound(lat, lng, a.house_number, shortAddress(a, r.display_name), areaOf(a), city);
+        return showHere(p ? p.lat : lat, p ? p.lng : lng, p ? p.address : shortAddress(a, r.display_name));
       }
       if (qNum && r.boundingbox && (a.road || r.category === 'highway' || r.class === 'highway')) {
         toast(`Looking for ${qNum} on ${a.road || r.name || 'this street'}…`);
@@ -1249,7 +1260,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
           const [la, ln] = labelAt(h);
           const p = (h.ring && places.find(x => inRing(x.lat, x.lng, h.ring))) || placeAt(`${qNum} ${a.road || ''}`, la, ln);
           $('toast').hidden = true;
-          return p ? (map.setView([p.lat, p.lng], 18), openSheet(p.id)) : openFound(la, ln, qNum, '', areaOf(a), city);
+          p ? (map.setView([p.lat, p.lng], 18), openSheet(p.id)) : openFound(la, ln, qNum, '', areaOf(a), city);
+          return showHere(p ? p.lat : la, p ? p.lng : ln, p ? p.address : `${qNum} ${a.road || ''}`.trim());
         }
         toast(`The map has no house ${qNum} on ${a.road || r.name || 'this street'} yet. Tap the house to log it.`);
       }
@@ -1384,6 +1396,39 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     saveThenNext = true; $('visitForm').requestSubmit();
   });
 
+  // Searched an address: the neighborhood numbers and a route from it, above the usual form.
+  const STATS_KEY = 'canvass-log.areastats';
+  let statsCache = {}; try { statsCache = JSON.parse(localStorage.getItem(STATS_KEY)) || {}; } catch {}
+  let here = null;
+  function hideHere() { here = null; $('hereBox').hidden = true; }
+  async function areaStats(lat, lng) {
+    const k = `${lat.toFixed(3)},${lng.toFixed(3)}`, hit = statsCache[k];
+    if (hit && Date.now() - hit.t < 90 * 864e5) return hit;
+    const { bgs } = await blockGroups([lat, lng], 0.8);
+    if (!bgs.length) throw new Error('No Census data here');
+    const mine = bgs.find(b => (b.rings || []).some(r => inRing(lat, lng, r.map(([x, y]) => [y, x])))) || bgs.slice().sort((a, b) => km([lat, lng], [a.lat, a.lng]) - km([lat, lng], [b.lat, b.lng]))[0];
+    const v = (await acsReporter([mine])).get(mine.geoid) || {};
+    const out = { t: Date.now(), income: v.income, owner: v.occupied ? v.owner / v.occupied : null, value: v.value, houses: v.structures ? ((v.detached || 0) + (v.attached || 0)) / v.structures : null };
+    statsCache[k] = out; try { localStorage.setItem(STATS_KEY, JSON.stringify(statsCache)); } catch {}
+    return out;
+  }
+  function showHere(lat, lng, label) {
+    here = { lat, lng, label }; $('hereBox').hidden = false;
+    const money = n => n == null ? '–' : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}k`, per = n => n == null ? '–' : `${Math.round(n * 100)}%`;
+    const paint = st => {
+      $('hereStats').innerHTML = [[money(st.income), 'Income'], [per(st.owner), 'Owners'], [money(st.value), 'Home value'], [per(st.houses), 'Houses']].map(([b, l]) => `<div><b>${b}</b><span>${l}</span></div>`).join('');
+      $('hereNote').textContent = 'Medians for this Census block group, from the American Community Survey.';
+    };
+    paint({}); $('hereNote').textContent = 'Loading neighborhood numbers from the Census…';
+    areaStats(lat, lng).then(st => { if (here && here.lat === lat && here.lng === lng) paint(st); })
+      .catch(() => { if (here && here.lat === lat) $('hereNote').textContent = 'Census numbers are not available right now.'; });
+  }
+  $('hereRoute').addEventListener('click', () => {
+    if (!here) return;
+    const { lat, lng, label } = here;
+    guardLeave(() => { closeSheet(); startWalk(lat, lng, label || '', $('fArea').value.trim(), { range: rb.range || '20-50' }); showTab('map'); });
+  });
+
   // Doorstep signs: what you can see before knocking. Over time the Log report compares answer and lead
   // rates with and without each one, to test the veterans' rules of thumb.
   const SIGNS = [{ key: 'cars', label: 'Cars' }, { key: 'open', label: 'Door open' }, { key: 'decor', label: 'Decorated' }];
@@ -1440,7 +1485,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     survey = {}; paintSurvey(); signs = {}; paintSigns(); fillAppt(null); fillCallback(null);
     $('historyWrap').hidden = true; $('deleteBtn').hidden = true;
     $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
-    fillQuick(null); showSheet('sheet'); markClean();
+    hideHere(); fillQuick(null); showSheet('sheet'); markClean();
     if (known && !city) cityInto(lat, lng);
   }
 
@@ -1459,7 +1504,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     $('history').innerHTML = h.map(x => { const s = statusOf(x.status); return `<li style="--c:${s.color}"><span class="dot"></span><time>${fmtDateTime(x.t)}</time>${s.label}</li>`; }).join('');
     $('deleteBtn').hidden = false; resetDelete();
     $('addrBox').open = false; paintAddrSum(); paintNoteChips(); paintCity();
-    fillQuick(p); showSheet('sheet'); markClean();
+    hideHere(); fillQuick(p); showSheet('sheet'); markClean();
     if (p.city == null) cityInto(p.lat, p.lng);
   }
 
@@ -1797,6 +1842,12 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   try { routes = JSON.parse(localStorage.getItem(ROUTES_KEY)) || []; } catch {}
   const persistRoutes = () => { try { localStorage.setItem(ROUTES_KEY, JSON.stringify(routes)); } catch { toast('Phone storage is full. Delete an old saved route.'); } };
   try { walk = JSON.parse(localStorage.getItem(WALK_KEY)); if (walk && walk.loading) walk = null; } catch {}
+  // A route nobody has worked in a day is parked, so it stops filling the map and the Routes tab.
+  // Routes with progress go to Saved routes, where Resume brings them back.
+  if (walk && Date.now() - Math.max(walk.worked || 0, walk.saved || 0, walk.opened || 0, +String(walk.id || '').slice(1) || 0) > 864e5) {
+    if ((walk.doneIds || []).length || routes.some(r => r.id === walk.id)) saveRoute();
+    walk = null; try { localStorage.removeItem(WALK_KEY); } catch {}
+  }
   function saveWalk() {
     try { walk ? localStorage.setItem(WALK_KEY, JSON.stringify(walk)) : localStorage.removeItem(WALK_KEY); } catch {}
     if (walk && !walk.loading && routes.some(r => r.id === walk.id)) saveRoute();
@@ -2665,7 +2716,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   }
   function openRoute(id) {
     const r = routes.find(x => x.id === id); if (!r) return;
-    walk = JSON.parse(JSON.stringify(r));
+    walk = JSON.parse(JSON.stringify(r)); walk.opened = Date.now();
     saveWalk(); listMode('walk'); renderWalk(); drawWalk();
     const n = nextHouse(walk.stopAt || null);
     toast(n ? `Resuming at ${houseLabel(n)}` : 'Every house on this route is done');
