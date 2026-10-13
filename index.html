@@ -1039,6 +1039,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     const hit = list => list.some(r => r.address && (r.address.house_number || '').toLowerCase() === qNum.toLowerCase());
     let res = await find(q);
     if (qNum && !hit(res)) {
+      // Photon reads the same map data but forgives typos and loose street names ("2112 ibis nampa").
+      const seen0 = new Set(res.map(r => r.osm_type + r.osm_id));
+      res = [...res, ...(await photonFind(q, c).catch(() => [])).filter(r => !seen0.has(r.osm_type + r.osm_id))];
+    }
+    if (qNum && !hit(res)) {
       const v = tidyQuery(q);
       if (v && v !== q) {
         await new Promise(ok => setTimeout(ok, 1100)); // Nominatim allows one lookup a second
@@ -1047,8 +1052,31 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       }
       if (!hit(res)) { const cr = await censusFind(v || q).catch(() => null); if (cr) res.unshift(cr); }
     }
+    // Still nothing: find the town on its own, so the search never ends empty-handed.
+    if (!res.length) {
+      const words = q.replace(/^\s*\d+[A-Za-z]?\s+/, '').split(/[\s,]+/).filter(Boolean);
+      for (const k of [2, 1]) {
+        if (words.length <= k) continue;
+        await new Promise(ok => setTimeout(ok, 1100));
+        const t = (await get(words.slice(-k).join(' '), '').catch(() => [])).filter(r => !r.address || !r.address.road);
+        if (t.length) { res = t.slice(0, 3).map(r => ({ ...r, town: words.slice(0, -k).join(' ') })); break; }
+      }
+    }
     const has = r => r.address && r.address.house_number ? 0 : 1;
     return res.map((r, i) => [r, i]).sort((a, b) => has(a[0]) - has(b[0]) || a[1] - b[1]).map(x => x[0]);
+  }
+  async function photonFind(q, c) {
+    const r = await fetch(`https://photon.komoot.io/api/?limit=6&lang=en&lat=${c.lat}&lon=${c.lng}&q=${encodeURIComponent(q)}`);
+    if (!r.ok) return [];
+    return ((await r.json()).features || []).filter(f => f.geometry && f.properties).map(f => {
+      const p = f.properties, [lon, lat] = f.geometry.coordinates, e = p.extent;
+      const street = p.osm_key === 'highway' && !p.housenumber;
+      const address = { house_number: p.housenumber || '', road: p.street || (street ? p.name : ''), city: p.city || p.town || p.village || '', state: p.state || '', postcode: p.postcode || '' };
+      const out = { lat, lon, name: street ? p.name : p.housenumber ? '' : p.name || '', osm_type: { N: 'node', W: 'way', R: 'relation' }[p.osm_type] || p.osm_type, osm_id: p.osm_id, address, category: street ? 'highway' : p.osm_key };
+      if (e) out.boundingbox = [e[3], e[1], e[0], e[2]].map(String);
+      out.display_name = [shortAddress(address), p.county, p.country].filter(Boolean).join(', ') || p.name || '';
+      return out;
+    });
   }
   const DIRS = { north: 'N', south: 'S', east: 'E', west: 'W', northeast: 'NE', northwest: 'NW', southeast: 'SE', southwest: 'SW' };
   const SUFFIX = /^(st|street|ave|avenue|av|rd|road|dr|drive|ct|court|ln|lane|pl|place|blvd|boulevard|way|cir|circle|loop|pkwy|parkway|ter|terrace|trl|trail|hwy|highway|cv|cove|sq|square|xing|run|row|walk|path|pass|pt|point)$/i;
@@ -1244,9 +1272,15 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       if (!$('fArea').value && area) { $('fArea').value = area; settle('fArea'); paintAddrSum(); }
     } catch {}
   }
+  // An address the search couldn't place: the next house tapped near there takes it.
+  let typed = null;
+  const cap1 = s => s.replace(/(^|\s)([a-z])/g, (m, a, b) => a + b.toUpperCase());
   async function lookupInto(lat, lng, num) {
+    const t = typed && Date.now() - typed.at < 18e5 && km([lat, lng], typed.near) < typed.km && (!num || num === typed.num) ? typed : null;
+    if (t) { typed = null; $('fAddress').value = t.address; settle('fAddress'); $('sheetTitle').textContent = t.address; }
     try {
       let { address, area, city } = await reverse(lat, lng);
+      if (t) address = t.address;
       // The outline's own number wins over the lookup's nearest guess.
       if (num && address) { const [first, ...rest] = address.split(', '); address = [/^\d/.test(first) ? first.replace(/^\S+/, num) : `${num} ${first}`, ...rest].join(', '); }
       if (draft && draft.lat === lat && draft.lng === lng) {
@@ -1257,6 +1291,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         paintAddrSum();
       }
     } catch {
+      if (t) return;
       if (draft && draft.lat === lat) { $('sheetTitle').textContent = 'Address not found'; $('fAddress').value = ''; $('fAddress').placeholder = 'Type the address'; $('addrBox').open = true; paintAddrSum(); }
     }
   }
@@ -1318,7 +1353,14 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
           p ? (map.setView([p.lat, p.lng], 18), openSheet(p.id)) : openFound(la, ln, qNum, '', areaOf(a), city);
           return showHere(p ? p.lat : la, p ? p.lng : ln, p ? p.address : `${qNum} ${a.road || ''}`.trim());
         }
-        toast(`The map has no house ${qNum} on ${a.road || r.name || 'this street'} yet. Tap the house to log it.`);
+        const full = shortAddress({ ...a, house_number: qNum, road: a.road || r.name });
+        typed = { address: full, num: qNum, at: Date.now(), near: [lat, lng], km: 3 };
+        toast(`The map has no house ${qNum} on ${a.road || r.name || 'this street'} yet. Tap the house and ${full.split(',')[0]} fills in.`);
+      }
+      if (r.town != null && qNum) {
+        const town = r.name || city || '', full = [cap1(`${qNum} ${r.town}`.trim()), town].filter(Boolean).join(', ');
+        typed = { address: full, num: qNum, at: Date.now(), near: [lat, lng], km: 25 };
+        toast(`That street isn't on the map yet, so here is ${town || 'the town'}. Find the house and tap it: ${full.split(',')[0]} fills in.`);
       }
       if (r.boundingbox) { const [s, n, w, ea] = r.boundingbox.map(Number); map.fitBounds([[s, w], [n, ea]], { maxZoom: 18 }); }
       else map.setView([lat, lng], 17);
@@ -1327,14 +1369,17 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     if (exact.length === 1) { ul.innerHTML = mineHtml; ul.querySelector('button[data-p]').click(); return; }
     try {
       res = await search(q, qNum);
-      if (!res.length && !mine.length) { ul.innerHTML = '<li class="msg">No places found. Try adding the town or ZIP code.</li>'; return; }
+      if (!res.length && !mine.length) {
+        if (qNum) { const c = map.getCenter(); typed = { address: cap1(tidyQuery(q) || q), num: qNum, at: Date.now(), near: [c.lat, c.lng], km: 30 }; }
+        ul.innerHTML = `<li class="msg">${qNum ? 'That address isn\'t on the map yet. Move the map to the house and tap it, and the address you typed fills in.' : 'No places found. Try adding the town or ZIP code.'}</li>`; return;
+      }
       ul.innerHTML = mineHtml + res.map((r, i) => {
         const main = shortAddress(r.address, r.display_name).split(', ')[0] || r.name;
-        return `<li><button type="button" data-i="${i}">${esc(r.name || main)}<span class="sub">${esc(r.display_name)}</span></button></li>`;
+        return `<li><button type="button" data-i="${i}">${esc(r.name || main)}<span class="sub">${r.town != null ? 'Street not on the map yet · go to the town · ' : ''}${esc(r.display_name)}</span></button></li>`;
       }).join('');
-      // The top result is that exact house number, and only one place has it: open it, no extra tap.
+      // The top result is that exact house number, or the only result: open it, no extra tap.
       const same = res.filter(r => r.address && qNum && (r.address.house_number || '').toLowerCase() === qNum.toLowerCase());
-      if (!mine.length && same.length === 1 && res[0] === same[0]) ul.querySelector('button[data-i="0"]').click();
+      if (!mine.length && ((same.length === 1 && res[0] === same[0]) || res.length === 1)) ul.querySelector('button[data-i="0"]').click();
     } catch {
       ul.innerHTML = mineHtml + '<li class="msg">Search needs an internet connection. Try again in a moment.</li>';
     }
