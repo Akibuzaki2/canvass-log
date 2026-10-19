@@ -519,6 +519,31 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 .menu { display: flex; flex-direction: column; gap: 10px; }
 .menu .btn { text-align: left; }
 .menu p { margin: 0; font-size: 14px; color: var(--muted); }
+
+/* Print leads: pick a date range and statuses, then the phone's print dialog gets a clean list of lead cards. */
+.pchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pchips button { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 7px 12px; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.pchips button .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.pchips button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.pcount { font-size: 15px; font-weight: 600; }
+#printReport { display: none; }
+@media print {
+  @page { margin: 12mm; }
+  html, body { height: auto !important; overflow: visible !important; display: block !important; background: #fff !important; color: #000 !important; }
+  body > *:not(#printReport) { display: none !important; }
+  #printReport { display: block !important; font: 11pt/1.35 var(--font-body); color: #000; }
+  #printReport h1 { font-size: 18pt; margin: 0 0 2pt; }
+  #printReport .meta { color: #444; margin: 0 0 10pt; font-size: 10pt; }
+  #printReport .lead { border: 1px solid #999; border-radius: 6pt; padding: 8pt 10pt; margin: 0 0 8pt; break-inside: avoid; page-break-inside: avoid; }
+  #printReport .lead-top { display: flex; justify-content: space-between; gap: 10pt; align-items: baseline; }
+  #printReport .lead h2 { font-size: 13pt; margin: 0; }
+  #printReport .st { font-weight: 700; white-space: nowrap; }
+  #printReport .line { margin: 2pt 0 0; }
+  #printReport .k { font-family: var(--font-label); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; font-size: 9pt; color: #444; margin-right: 4pt; }
+  #printReport .sv { display: flex; flex-wrap: wrap; gap: 2pt 14pt; margin-top: 4pt; }
+  #printReport .sv > span { white-space: nowrap; }
+  #printReport .notes { margin-top: 4pt; white-space: pre-wrap; }
+}
 </style>
 </head>
 <body>
@@ -800,6 +825,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     <button class="btn" id="vendorBtn" type="button">Your details for booth requests</button>
     <span class="label">Backup and export</span>
     <button class="btn primary" id="exportXlsx" type="button">Contact sheet for work (Excel)</button>
+    <button class="btn" id="printLeadsBtn" type="button">Print leads</button>
     <button class="btn" id="exportCsv" type="button">Export spreadsheet (CSV)</button>
     <button class="btn" id="exportJson" type="button">Download backup file</button>
     <button class="btn" id="importJson" type="button">Restore from backup file</button>
@@ -924,7 +950,33 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   <div class="sheet-body" id="flowBody"></div>
 </section>
 
+<section class="sheet" id="printSheet" role="dialog" aria-modal="true" aria-labelledby="printTitle" hidden>
+  <div class="sheet-head">
+    <div class="titles">
+      <div class="grab"></div>
+      <h2 id="printTitle">Print leads</h2>
+      <div class="sub">Name, phone, address, survey answers and notes for each lead.</div>
+    </div>
+    <button class="close" data-close aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div class="two">
+      <div class="field"><label class="label" for="prtFrom">Start date</label><input id="prtFrom" type="date"></div>
+      <div class="field"><label class="label" for="prtTo">End date</label><input id="prtTo" type="date"></div>
+    </div>
+    <div class="field">
+      <span class="label" id="prtStLabel">Statuses to include</span>
+      <div class="pchips" id="prtStatuses" role="group" aria-labelledby="prtStLabel"></div>
+    </div>
+    <div class="pcount" id="prtCount" role="status"></div>
+  </div>
+  <div class="sheet-foot"><button class="btn primary" id="prtGo" type="button" style="flex:1">Print</button></div>
+</section>
+
 <div class="toast" id="toast" role="status" hidden></div>
+<div id="printReport" aria-hidden="true"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
@@ -2023,11 +2075,14 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         <button class="btn" type="button" id="shareReport">Share report</button>
         <button class="btn" type="button" id="csvReport">Export these rows</button>
         <button class="btn" type="button" id="xlsxReport">Contact sheet (Excel)</button>
+        <button class="btn" type="button" id="printReportBtn">Print leads</button>
       </div>`;
     $('shareReport').onclick = () => shareReport(title, visits, s);
     $('csvReport').onclick = () => exportVisits(visits);
     $('xlsxReport').onclick = () => exportContacts([...new Map(visits.map(v => [v.p.id, v.p])).values()]);
     $('shareReport').disabled = $('csvReport').disabled = $('xlsxReport').disabled = !visits.length;
+    // Print starts from the day or days the Log is showing; "All dates" falls back to today.
+    $('printReportBtn').onclick = () => { const r = range(); openPrint(r.all ? null : { from: r.from, to: r.to - 1 }); };
   }
 
   function reportText(title, visits, s) {
@@ -4781,6 +4836,74 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       toast(`Restored ${added} address${added === 1 ? '' : 'es'}`);
     } catch { toast('That file is not a Canvass Log backup.'); }
     e.target.value = '';
+  });
+
+  // ---------- Print leads ----------
+  // Doors whose current status is one of these, logged on any day in the range. Change the defaults here.
+  const PRINT_DEFAULT = ['lead', 'demo', 'sold'];
+  const PRINT_KEY = 'canvass-log.printStatuses';
+  let printSt = PRINT_DEFAULT;
+  try { const v = JSON.parse(localStorage.getItem(PRINT_KEY)); if (Array.isArray(v) && v.length) printSt = v.filter(k => STATUSES.some(s => s.key === k)); } catch {}
+  function printRange() {
+    let a = $('prtFrom').value || dayKey(Date.now()), b = $('prtTo').value || a;
+    if (a > b) [a, b] = [b, a];
+    const at = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d).getTime(); };
+    return { from: at(a), to: at(b) + 864e5, a, b };
+  }
+  function printLeads() {
+    const r = printRange(), out = [];
+    for (const p of places) {
+      if (!printSt.includes(p.status)) continue;
+      const inR = (p.history || []).filter(h => h.t >= r.from && h.t < r.to);
+      if (inR.length) out.push({ p, t: inR.at(-1).t });
+    }
+    return out.sort((x, y) => x.t - y.t);
+  }
+  function paintPrint() {
+    $('prtStatuses').innerHTML = STATUSES.map(s => `<button type="button" data-k="${s.key}" style="--c:${s.color}" aria-pressed="${printSt.includes(s.key)}"><span class="dot"></span>${s.label}</button>`).join('');
+    const n = printLeads().length;
+    $('prtCount').textContent = !printSt.length ? 'Pick at least one status.' : n ? `${n} ${n === 1 ? 'door' : 'doors'} will print` : 'No doors match these dates and statuses.';
+    $('prtGo').disabled = !n;
+  }
+  function openPrint(r) {
+    $('prtFrom').value = dayKey(r ? r.from : Date.now()); $('prtTo').value = dayKey(r ? r.to : Date.now());
+    if (openSheetId) closeSheet();
+    paintPrint(); showSheet('printSheet');
+  }
+  $('printLeadsBtn').addEventListener('click', () => openPrint(null));
+  ['prtFrom', 'prtTo'].forEach(id => $(id).addEventListener('input', paintPrint));
+  $('prtStatuses').addEventListener('click', e => {
+    const b = e.target.closest('button[data-k]'); if (!b) return;
+    const k = b.dataset.k;
+    printSt = printSt.includes(k) ? printSt.filter(x => x !== k) : STATUSES.map(s => s.key).filter(x => x === k || printSt.includes(x));
+    try { localStorage.setItem(PRINT_KEY, JSON.stringify(printSt)); } catch {}
+    paintPrint();
+  });
+  $('prtGo').addEventListener('click', () => {
+    const list = printLeads(), r = printRange();
+    if (!list.length) return;
+    const longDay = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); };
+    const when = r.a === r.b ? longDay(r.a) : `${longDay(r.a)} – ${longDay(r.b)}`;
+    const blank = v => esc(v) || '—';
+    $('printReport').innerHTML = `<h1>Leads: ${esc(when)}</h1>
+      <p class="meta">${list.length} ${list.length === 1 ? 'door' : 'doors'} · ${esc(printSt.map(k => statusOf(k).label).join(', '))} · printed ${esc(fmtDateTime(Date.now()))}</p>`
+      + list.map(({ p, t }) => {
+        const st = statusOf(p.status), signs = SIGNS.filter(g => (p.signs || {})[g.key]).map(g => SIGN_NAMES[g.key]);
+        const extra = p.status === 'demo' && p.appt ? apptText(p.appt) : p.status === 'return' && p.callback ? `Come back ${cbText(p.callback)}` : '';
+        return `<div class="lead">
+          <div class="lead-top"><h2>${blank(p.name)}</h2><span class="st">${esc(st.label)}</span></div>
+          <div class="line"><span class="k">Phone</span>${blank(p.phone)}</div>
+          <div class="line"><span class="k">Address</span>${p.biz ? `${esc(p.biz)}, ` : ''}${blank(p.address)}${p.city && !(p.address || '').includes(p.city) ? `, ${esc(p.city)}` : ''}</div>
+          <div class="line"><span class="k">Logged</span>${esc(fmtDateTime(t))}${extra ? ` · <span class="k">${p.status === 'demo' ? 'Appointment' : 'Callback'}</span>${esc(extra)}` : ''}</div>
+          <div class="sv">${SURVEY.map(s => `<span><span class="k">${esc(s.q)}</span>${yesNo((p.survey || {})[s.key]) || '—'}</span>`).join('')}</div>
+          ${signs.length ? `<div class="line"><span class="k">Doorstep</span>${esc(signs.join(', '))}</div>` : ''}
+          <div class="notes"><span class="k">Notes</span>${blank(p.notes)}</div>
+        </div>`;
+      }).join('');
+    const title = document.title;
+    document.title = `Leads ${r.a === r.b ? r.a : `${r.a} to ${r.b}`}`;   // the PDF's file name when saved
+    window.addEventListener('afterprint', () => { document.title = title; }, { once: true });
+    window.print();
   });
 
   // ---------- Boot ----------
