@@ -1861,7 +1861,36 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
 
   let openSheetId = null;
   function showSheet(id) { $('scrim').hidden = false; $(id).hidden = false; openSheetId = id; if (id === 'sheet') updateSaveNext(); }
+  // A half-typed visit survives the phone locking or closing the app: it's kept on the phone when the
+  // app goes to the background and reopened on the next launch. Saving or discarding it clears it.
+  const UNSAVED_KEY = 'canvass-log.unsaved';
+  function keepUnsaved() {
+    if (!isDirty()) return;
+    const f = {}; FORM_FIELDS.forEach(k => { if (k !== 'purpose') f[k] = $(k).value; });
+    try { localStorage.setItem(UNSAVED_KEY, JSON.stringify({ at: Date.now(), draft: { id: draft.id || null, lat: draft.lat, lng: draft.lng }, status: selStatus, purpose: apptPurpose, survey, signs, biz: !$('bizWrap').hidden, f })); } catch {}
+  }
+  const dropUnsaved = () => { try { localStorage.removeItem(UNSAVED_KEY); } catch {} };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') keepUnsaved(); });
+  window.addEventListener('pagehide', keepUnsaved);
+  function restoreUnsaved() {
+    let u = null; try { u = JSON.parse(localStorage.getItem(UNSAVED_KEY)); } catch {}
+    if (!u || !u.draft || Date.now() - u.at > 14 * 864e5) return dropUnsaved();
+    const d = u.draft, f = u.f || {};
+    if (d.id && places.some(x => x.id === d.id)) openSheet(d.id);
+    else if (d.id) return dropUnsaved();   // the address was deleted since
+    else openNew(d.lat, d.lng, f.fAddress || 'Unsaved address', !!f.fAddress, f.fArea, f.fCity);
+    // Fill in what was typed after the sheet records its starting point, so leaving still asks to save.
+    Object.entries(f).forEach(([k, v]) => { if ($(k) && v != null) $(k).value = v; });
+    $('bizWrap').hidden = !u.biz;
+    selStatus = u.status || ''; paintStatus();
+    apptPurpose = u.purpose || 'Demo'; paintPurpose();
+    survey = u.survey || {}; paintSurvey(); signs = u.signs || {}; paintSigns();
+    paintAddrSum(); paintNoteChips(); paintCity(); updateSaveNext();
+    showTab('map'); map.setView([d.lat, d.lng], 18);
+    toast('Picked up your unsaved visit where you left off.');
+  }
   function closeSheet() {
+    if (openSheetId === 'sheet') dropUnsaved();
     if (openSheetId) $(openSheetId).hidden = true;
     $('scrim').hidden = true; openSheetId = null; draft = null;
     if (tempMarker) { tempMarker.remove(); tempMarker = null; }
@@ -3973,12 +4002,18 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   }
   const pendingOf = st => !!(st && (st.isNew || (st.changes && Object.keys(st.changes).length)));
   function markReviewed(id) { const st = stOf(id); delete st.isNew; delete st.changes; saveState(); }
+  // A fresh install starts with nothing to review: the first list it loads becomes the baseline,
+  // and only events added or changed after that light up the bell.
+  const BASE_KEY = 'canvass-log.inboxbase';
+  let inboxBase = new Set(readJSON(BASE_KEY, []));
   function diffFeed(events) {
+    const first = !Object.keys(seen).length;
+    if (first) { events.forEach(e => e && e.id && inboxBase.add(e.id)); writeJSON(BASE_KEY, [...inboxBase]); }
     for (const e of events) {
       if (!e || !e.id) continue;
       const prev = seen[e.id], snap = {};
       for (const k of Object.keys(TRACK)) snap[k] = e[k] ?? null;
-      if (!prev) { if (!isPast(e)) stOf(e.id).isNew = { by: 'weekly event search', at: Date.now() }; }
+      if (!prev) { if (!first && !isPast(e)) stOf(e.id).isNew = { by: 'weekly event search', at: Date.now() }; }
       else for (const k of Object.keys(TRACK)) if (String(prev[k] ?? '') !== String(snap[k] ?? '')) logChange(e.id, k, prev[k], snap[k], 'weekly event search');
       seen[e.id] = snap;
     }
@@ -4410,8 +4445,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   function inboxItems() {
     const evs = allEvents();
     const review = evs.filter(e => pendingOf(evState[e.id]));
-    const asks = evs.filter(e => needsAsk(e) && !(evState[e.id] || {}).infoAsked);
-    const calls = evs.filter(e => !e.email && telOf(e.phone) && !isPast(e) && missingInfo(e).some(m => m.short === 'booth price') && !(evState[e.id] || {}).called);
+    const asks = evs.filter(e => !inboxBase.has(e.id) && needsAsk(e) && !(evState[e.id] || {}).infoAsked);
+    const calls = evs.filter(e => !inboxBase.has(e.id) && !e.email && telOf(e.phone) && !isPast(e) && missingInfo(e).some(m => m.short === 'booth price') && !(evState[e.id] || {}).called);
     return { review, asks, calls };
   }
   function renderInbox() {
@@ -4952,6 +4987,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   window.addEventListener('online', backfillAreas);
   let tab = 'home'; try { tab = localStorage.getItem('canvass-log.tab') || 'home'; } catch {}
   showTab(tab);
+  restoreUnsaved();
   if (places.length && !saved) map.fitBounds(L.latLngBounds(places.map(p => [p.lat, p.lng])), { maxZoom: 17, padding: [40, 40] });
   if (places.length) $('hint').hidden = true;
   map.once('click', () => ($('hint').hidden = true));
