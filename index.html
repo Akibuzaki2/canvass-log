@@ -1002,13 +1002,21 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   const KEY = 'canvass-log.v1';
   let places = [];
   function load() {
-    try { places = JSON.parse(localStorage.getItem(KEY) || '[]'); if (!Array.isArray(places)) places = []; }
-    catch { places = []; }
+    let raw = null;
+    try { raw = localStorage.getItem(KEY); } catch {}
+    try { places = JSON.parse(raw || '[]'); if (!Array.isArray(places)) throw 0; }
+    catch {
+      // Saved visits that can't be read are set aside, not overwritten by the next save, so they can be recovered.
+      places = [];
+      if (raw) { try { localStorage.setItem(`${KEY}.unreadable-${Date.now()}`, raw); } catch {} setTimeout(() => toast('Saved visits could not be read. A copy was kept; restore a backup from the menu.'), 500); }
+    }
   }
   function persist() {
     try { localStorage.setItem(KEY, JSON.stringify(places)); return true; }
-    catch { toast('Could not save on this device. Check that private browsing is off.'); return false; }
+    catch { toast('Not saved: phone storage is full or private browsing is on. Back up from the menu, then try again.'); return false; }
   }
+  // The app open in a second tab or window saves over the same list: pick up its changes so neither undoes the other.
+  window.addEventListener('storage', e => { if (e.key === KEY) { load(); refresh(); } });
   // Ask the browser to keep our data even when storage runs low.
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
 
@@ -1240,7 +1248,7 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   let saved = null; try { saved = JSON.parse(localStorage.getItem(VIEW_KEY)); } catch {}
   const map = L.map('map', { zoomControl: false, tap: true }).setView(saved ? [saved.lat, saved.lng] : [39.5, -98.35], saved ? saved.z : 4);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, extra buildings Microsoft via <a href="https://overturemaps.org">Overture</a>'
+    maxZoom: 19, crossOrigin: '', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, extra buildings Microsoft via <a href="https://overturemaps.org">Overture</a>'
   }).addTo(map);
   // Satellite photo: shows houses that are too new for the street map's outlines. Street names ride on top.
   const STREET_KEY = 'canvass-log.streetmap';   // the satellite photo is the default; this remembers choosing the street map
@@ -1397,7 +1405,8 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
       }
     } catch {
       if (t) return;
-      if (draft && draft.lat === lat) { $('sheetTitle').textContent = 'Address not found'; $('fAddress').value = ''; $('fAddress').placeholder = 'Type the address'; $('addrBox').open = true; paintAddrSum(); }
+      // Keep anything typed while the lookup was still trying (weak signal can take a while to give up).
+      if (draft && draft.lat === lat && !$('fAddress').dataset.touched) { $('sheetTitle').textContent = 'Address not found'; $('fAddress').value = ''; $('fAddress').placeholder = 'Type the address'; $('addrBox').open = true; paintAddrSum(); }
     }
   }
 
@@ -1889,7 +1898,9 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
     }
     afterSave(p, wid);
     if (appt && JSON.stringify(appt) !== JSON.stringify(draft.apptWas || null)) addToCalendar(p);
-    if (persist()) toast(appt ? `Booked: ${apptText(appt)}` : p.callback ? `Come back ${cbText(p.callback)}` : selStatus ? `Saved as ${statusOf(selStatus).label}` : 'Saved to your plan');
+    // If the phone refuses the save, keep the sheet open so nothing typed is lost and Save can be tapped again.
+    if (!persist()) { draft.id = p.id; draft.apptWas = appt; saveThenNext = false; return; }
+    toast(appt ? `Booked: ${apptText(appt)}` : p.callback ? `Come back ${cbText(p.callback)}` : selStatus ? `Saved as ${statusOf(selStatus).label}` : 'Saved to your plan');
     closeSheet(); refresh();
     if (saveThenNext) { saveThenNext = false; goNext(wid); }
   });
@@ -4816,7 +4827,33 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
   const lastT = p => ((p.history || []).at(-1) || {}).t || p.updated || 0;
   function backup() {
     try { localStorage.setItem('canvass-log.backedup', String(Date.now())); } catch {}
-    download(`canvass-log-backup-${stamp()}.json`, JSON.stringify({ app: 'canvass-log', version: 1, places }, null, 1), 'application/json');
+    // Saved routes, your own events and their notes and booking status live only on this phone too, so they ride along.
+    download(`canvass-log-backup-${stamp()}.json`, JSON.stringify({ app: 'canvass-log', version: 2, places, routes, myEvents, evState, vendor }, null, 1), 'application/json');
+  }
+  // Restoring adds what this phone is missing and never overwrites newer work here.
+  function restoreExtras(data) {
+    let n = 0;
+    if (Array.isArray(data.routes)) {
+      const have = new Map(routes.map(r => [r.id, r]));
+      for (const r of data.routes) if (r && r.id && Array.isArray(r.sections) && (!have.has(r.id) || (r.saved || 0) > (have.get(r.id).saved || 0))) { have.set(r.id, r); n++; }
+      if (n) { routes = [...have.values()].sort((a, b) => (b.saved || 0) - (a.saved || 0)); persistRoutes(); }
+    }
+    if (Array.isArray(data.myEvents)) {
+      const ids = new Set(myEvents.map(e => e.id)), add = data.myEvents.filter(e => e && e.id && !ids.has(e.id));
+      if (add.length) { myEvents = [...myEvents, ...add]; writeJSON(EV_KEY, myEvents); n += add.length; }
+    }
+    if (data.evState && typeof data.evState === 'object') {
+      let k = 0;
+      // Per event, fill in only what this phone doesn't have yet (booking status, notes, your edits).
+      for (const [id, st] of Object.entries(data.evState)) {
+        if (!st || typeof st !== 'object') continue;
+        const cur = stOf(id), add = Object.keys(st).filter(f => cur[f] === undefined);
+        if (add.length) { add.forEach(f => (cur[f] = st[f])); k++; }
+      }
+      if (k) { saveState(); n += k; }
+    }
+    if (data.vendor && typeof data.vendor === 'object' && !Object.keys(vendor).length) { vendor = data.vendor; writeJSON(VENDOR_KEY, vendor); }
+    return n;
   }
   $('importJson').addEventListener('click', () => $('importFile').click());
   $('importFile').addEventListener('change', async e => {
@@ -4832,9 +4869,11 @@ ul.why.chg { background: color-mix(in srgb, #f07a45 16%, transparent); border-ra
         const cur = byId.get(p.id);
         if (!cur || (p.updated || 0) > (cur.updated || 0)) { byId.set(p.id, p); added++; }
       }
-      places = [...byId.values()]; persist(); refresh(); closeSheet();
-      toast(`Restored ${added} address${added === 1 ? '' : 'es'}`);
-    } catch { toast('That file is not a Canvass Log backup.'); }
+      places = [...byId.values()]; persist();
+      const extra = Array.isArray(data) ? 0 : restoreExtras(data);
+      refresh(); closeSheet(); if (tabNow === 'events') renderEvents();
+      toast(`Restored ${added} address${added === 1 ? '' : 'es'}${extra ? ` and ${extra} saved route and event item${extra === 1 ? '' : 's'}` : ''}`);
+    } catch (err) { console.error(err); toast('That file is not a Canvass Log backup.'); }
     e.target.value = '';
   });
 
